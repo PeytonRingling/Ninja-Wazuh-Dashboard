@@ -1,11 +1,11 @@
 # IT Operations Dashboard
 
-A locally-run web dashboard providing a unified view of Wazuh SIEM and NinjaOne RMM environments.
+A locally-run web dashboard providing a unified view of Wazuh SIEM and NinjaOne RMM environments. Correlates endpoint data across both platforms for a single pane of glass into your fleet's security and management status.
 
 ## Stack
 
 - **Backend:** Python + FastAPI + uvicorn
-- **Frontend:** React + TypeScript + Tailwind CSS + Recharts
+- **Frontend:** React + TypeScript + Vite + Tailwind CSS + Recharts
 
 ## Setup
 
@@ -14,19 +14,31 @@ A locally-run web dashboard providing a unified view of Wazuh SIEM and NinjaOne 
 - Python 3.11+
 - Node.js 18+
 
-### 1. Clone / navigate to the project
+### 1. Clone the repository
 
 ```bash
-cd ninja-wazuh-dashboard
+git clone git@github.com:Suntado/Ninja-Wazuh-Dashboard.git
+cd Ninja-Wazuh-Dashboard
 ```
 
 ### 2. Configure credentials
 
-Copy `.env.example` to `.env` (already done if you received a pre-filled `.env`):
-
 ```bash
 cp .env.example .env
-# Edit .env with your credentials
+```
+
+Edit `.env` with your actual credentials:
+
+```
+WAZUH_URL=https://your-wazuh-host:55000
+WAZUH_USERNAME=your-wazuh-username
+WAZUH_PASSWORD=your-wazuh-password
+WAZUH_INDEXER_URL=https://your-wazuh-host:443
+WAZUH_INDEXER_USERNAME=admin
+WAZUH_INDEXER_PASSWORD=your-indexer-password
+NINJA_URL=https://your-ninja-instance.rmmservices.net
+NINJA_CLIENT_ID=your-ninja-client-id
+NINJA_CLIENT_SECRET=your-ninja-client-secret
 ```
 
 ### 3. Install backend dependencies
@@ -43,57 +55,92 @@ npm install
 cd ..
 ```
 
-### 5. Run in development mode (two terminals)
+### 5. Build the frontend
+
+```bash
+cd frontend
+npm run build
+cd ..
+```
+
+### 6. Run the backend
+
+```bash
+cd backend
+python main.py
+```
+
+Open **http://localhost:8000** in your browser. The backend serves the built frontend directly.
+
+---
+
+### Development mode (hot reload)
+
+Run two terminals simultaneously:
 
 **Terminal 1 — Backend:**
 ```bash
 cd backend
 python main.py
 ```
-Backend runs on http://localhost:8000
 
-**Terminal 2 — Frontend (hot reload):**
+**Terminal 2 — Frontend:**
 ```bash
 cd frontend
 npm run dev
 ```
-Frontend runs on http://localhost:5173
 
-Open http://localhost:5173 in your browser.
+Open **http://localhost:5173**. The Vite dev server proxies API calls to the backend automatically.
 
-### 6. (Optional) Build frontend for production
+> **Note:** After any frontend changes in production mode, re-run `npm run build` and restart the backend.
 
-```bash
-cd frontend
-npm run build
-```
-
-Then run only the backend — it will serve the built frontend at http://localhost:8000:
-```bash
-cd backend
-python main.py
-```
+---
 
 ## Features
 
-- **Top bar:** Live alert severity counts and device online/offline status
-- **Wazuh tab:**
-  - Alert volume chart (24h / 7d / 30d toggleable)
-  - Top 20 noisy rules with sortable columns and visual bar indicators
-  - Severity donut chart — click to filter the alert table
-  - Paginated, filterable alert table (by severity, agent, rule ID)
-  - Agent status grid
-- **NinjaOne tab:**
-  - Device health grid with online/offline status, click to expand details
-  - Patch compliance summary cards + bar chart + issue table
-  - Recent activity feed with filters
-- 60-second auto-refresh on all panels
-- Manual refresh per tab
+### Home
+- Live system status indicators for Wazuh, NinjaOne, and overall fleet health
+- Wazuh 24h alert volume sparkline with severity breakdown
+- NinjaOne device connectivity bar and patch compliance bar
+- Endpoint Intel fleet score ring with per-severity agent counts
+- Recent critical alerts feed with agent name, rule, level, and timestamp
+- Quick-navigation cards to jump directly into any section
+
+### Endpoint Intelligence
+- Correlated view joining NinjaOne RMM devices with Wazuh SIEM agents by hostname
+- Fleet score ring (% of agents with no critical/high alerts)
+- Risk categorization: Critical Alerts · Offline + Alerts · No SIEM Coverage · Not in RMM · Healthy
+- Clickable coverage bar and metric cards for instant filtering
+- Device cards with inline expansion — click to reveal NinjaOne details + recent Wazuh alerts
+- Shows last logged-on user per device (from NinjaOne)
+- Filter by OS (Windows 11 / Windows 10 / Server / Linux / macOS), device type, and IP address search
+- Card view (grouped by risk category) and table view
+- Adjustable alert time window (1h / 3h / 6h / 12h / 24h)
+
+### Wazuh SIEM
+- Alert volume chart (24h / 7d / 30d) with per-severity stacked bars
+- Top 20 noisy rules with alert counts and visual bar indicators
+- Severity donut chart — click a segment to filter the alert table
+- Paginated, filterable alert table (by severity, agent, rule ID, time window)
+- Expanded alert detail with Windows Event data, hashes (SHA256 / MD5 / IMPHASH), MITRE ATT&CK tags, compliance mappings
+- VirusTotal links for file hashes
+- Agent status grid
+
+### NinjaOne RMM
+- Device health grid with online/offline status, OS, last seen
+- Click to expand device details
+- Patch compliance summary with failed / pending / patched breakdown
+- Recent activity feed with filters
+
+### General
+- 60-second auto-refresh on all data
+- Manual refresh per section
 - Loading skeletons while fetching
-- Graceful error states — if one API is down, the other tab works normally
+- Graceful error states — if one integration is unavailable, the rest continue working
+- All API credentials stay server-side — nothing touches the browser
 
-## Notes
+## Security Notes
 
-- All API calls are proxied through the FastAPI backend — no credentials touch the browser
-- Responses are cached for 60 seconds
-- Wazuh SSL verification is disabled (self-signed certs) — do not expose this backend publicly
+- Wazuh SSL verification is disabled to support self-signed certificates — **do not expose this backend publicly**
+- All credentials are loaded from `.env` at startup — never commit your `.env` file
+- The `.gitignore` excludes `.env` automatically
