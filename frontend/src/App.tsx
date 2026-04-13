@@ -5,11 +5,15 @@ import HomeTab from "./components/home/HomeTab";
 import WazuhTab from "./components/wazuh/WazuhTab";
 import NinjaTab from "./components/ninja/NinjaTab";
 import EndpointIntelTab from "./components/endpoint/EndpointIntelTab";
+import SettingsTab from "./components/settings/SettingsTab";
+import GuideTab from "./components/guide/GuideTab";
+import ThreatIntelTab from "./components/threat-intel/ThreatIntelTab";
 import GlobalSearch from "./components/GlobalSearch";
+import FloatingHelp from "./components/FloatingHelp";
 
-type Tab = "home" | "wazuh" | "ninja" | "endpoint";
+type Tab = "home" | "wazuh" | "ninja" | "endpoint" | "threat" | "guide" | "settings";
 
-const VALID_TABS: Tab[] = ["home", "wazuh", "ninja", "endpoint"];
+const VALID_TABS: Tab[] = ["home", "wazuh", "ninja", "endpoint", "threat", "guide", "settings"];
 
 function tabFromHash(): Tab {
   const h = window.location.hash.slice(1) as Tab;
@@ -22,39 +26,6 @@ export interface WazuhNavOptions {
   ruleId?: string;
 }
 
-function ShortcutsModal({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-[50000] flex items-center justify-center" onClick={onClose}>
-      <div className="bg-surface-800 border border-surface-600 rounded-2xl shadow-2xl p-6 w-80" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-slate-200">Keyboard Shortcuts</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="space-y-2.5 text-xs">
-          {([
-            ["H", "Home tab"],
-            ["W", "Wazuh SIEM tab"],
-            ["N", "NinjaOne RMM tab"],
-            ["E", "Endpoint Intel tab"],
-            ["Ctrl+K", "Global search"],
-            ["Escape", "Close drawers / search"],
-            ["?", "Toggle this panel"],
-          ] as [string, string][]).map(([key, desc]) => (
-            <div key={key} className="flex items-center justify-between gap-4">
-              <span className="text-slate-400">{desc}</span>
-              <kbd className="px-2 py-0.5 rounded bg-surface-700 border border-surface-500 text-slate-300 font-mono text-[11px]">{key}</kbd>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const [tab, setTab] = useState<Tab>(tabFromHash);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -63,7 +34,6 @@ export default function App() {
   const [wazuhNav, setWazuhNav] = useState<WazuhNavOptions>({});
   const [ninjaDeviceSearch, setNinjaDeviceSearch] = useState("");
   const [patchFocusDeviceId, setPatchFocusDeviceId] = useState<number | null>(null);
-  const [showShortcuts, setShowShortcuts] = useState(false);
   const [isDark, setIsDark] = useState(() => {
     const stored = localStorage.getItem("theme");
     if (stored) return stored === "dark";
@@ -78,7 +48,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Stamp initial state so popstate fires correctly on first Back press
     window.history.replaceState({ tab: tabFromHash() }, "", window.location.hash || "#home");
     const handler = (e: PopStateEvent) => {
       const t = (e.state?.tab ?? window.location.hash.slice(1)) as Tab;
@@ -104,7 +73,38 @@ export default function App() {
     localStorage.setItem("theme", isDark ? "dark" : "light");
   }, [isDark]);
 
-  // Keyboard shortcuts: H/W/N/E tabs, ? help
+  const fetchSummary = useCallback(async () => {
+    try {
+      const data = await api.summary();
+      setSummary(data);
+      setSummaryError(null);
+      if (data.wazuh && Notification.permission === "granted") {
+        const newCrit = data.wazuh.critical;
+        if (prevCritical.current !== null && newCrit > prevCritical.current) {
+          new Notification("🔴 New Critical Alerts", {
+            body: `${newCrit} critical alert${newCrit !== 1 ? "s" : ""} detected. Open dashboard for details.`,
+            icon: "/favicon.ico",
+            tag: "wazuh-critical",
+          });
+        }
+        prevCritical.current = newCrit + data.wazuh.high;
+      }
+    } catch (e) {
+      setSummaryError(e instanceof Error ? e.message : "Failed to load summary");
+    }
+  }, []);
+
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+    fetchSummary();
+    const id = setInterval(fetchSummary, 60_000);
+    return () => clearInterval(id);
+  }, [fetchSummary]);
+
+  // Keyboard shortcuts: H/W/N/E/G/S tabs, R refresh, D dark toggle
+  // ? shortcut is handled by FloatingHelp component
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const tag = (document.activeElement?.tagName ?? "").toLowerCase();
@@ -115,50 +115,20 @@ export default function App() {
         case "w": case "W": navigate("wazuh");    break;
         case "n": case "N": navigate("ninja");    break;
         case "e": case "E": navigate("endpoint"); break;
-        case "?": setShowShortcuts(s => !s); break;
-        case "Escape": setShowShortcuts(false); break;
+        case "t": case "T": navigate("threat");    break;
+        case "g": case "G": navigate("guide");    break;
+        case "s": case "S": navigate("settings"); break;
+        case "r": case "R": fetchSummary();       break;
+        case "d": case "D": setIsDark(d => !d);  break;
       }
     };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
-  }, [navigate]);
+  }, [navigate, fetchSummary]);
 
-  const fetchSummary = useCallback(async () => {
-    try {
-      const data = await api.summary();
-      setSummary(data);
-      setSummaryError(null);
-      // Browser notifications for new critical/high alerts
-      if (data.wazuh && Notification.permission === "granted") {
-        const newCrit = data.wazuh.critical;
-        const newHigh = data.wazuh.high;
-        if (prevCritical.current !== null) {
-          if (newCrit > prevCritical.current) {
-            new Notification("🔴 New Critical Alerts", {
-              body: `${newCrit} critical alert${newCrit !== 1 ? "s" : ""} detected. Open dashboard for details.`,
-              icon: "/favicon.ico",
-              tag: "wazuh-critical",
-            });
-          }
-        }
-        prevCritical.current = newCrit + newHigh;
-      }
-    } catch (e) {
-      setSummaryError(e instanceof Error ? e.message : "Failed to load summary");
-    }
-  }, []);
-
-  useEffect(() => {
-    // Request notification permission
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-    fetchSummary();
-    const id = setInterval(fetchSummary, 60_000);
-    return () => clearInterval(id);
-  }, [fetchSummary]);
-
-  const handleGlobalNav = (opts: { tab: string; subTab?: string; agentName?: string; ruleId?: string; deviceSearch?: string }) => {
+  const handleGlobalNav = (opts: {
+    tab: string; subTab?: string; agentName?: string; ruleId?: string; deviceSearch?: string;
+  }) => {
     navigate(opts.tab as Tab);
     if (opts.tab === "wazuh") setWazuhNav({ subTab: opts.subTab, agentName: opts.agentName, ruleId: opts.ruleId });
     if (opts.tab === "ninja" && opts.deviceSearch) setNinjaDeviceSearch(opts.deviceSearch);
@@ -167,7 +137,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-surface-900 flex flex-col">
-      {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
+      <FloatingHelp />
       <GlobalSearch onNavigate={handleGlobalNav} />
       <TopBar
         summary={summary}
@@ -175,6 +145,7 @@ export default function App() {
         onSeverityClick={(sev) => { navigate("wazuh"); setSeverityFilter(sev); }}
         isDark={isDark}
         onThemeToggle={() => setIsDark(d => !d)}
+        onSettingsClick={() => navigate("settings")}
       />
 
       {/* Tab Navigation */}
@@ -195,8 +166,11 @@ export default function App() {
             {([
               { key: "home",     label: "Home" },
               { key: "endpoint", label: "Endpoint Intel" },
+              { key: "threat",   label: "Threat Intel" },
               { key: "wazuh",    label: "Wazuh SIEM" },
               { key: "ninja",    label: "NinjaOne RMM" },
+              { key: "guide",    label: "Guide" },
+              { key: "settings", label: "Settings" },
             ] as { key: Tab; label: string }[]).map(({ key, label }) => (
               <button
                 key={key}
@@ -250,6 +224,16 @@ export default function App() {
           />
         )}
         {tab === "endpoint" && <EndpointIntelTab />}
+        {tab === "threat"   && (
+          <ThreatIntelTab
+            onNavigate={(t, deviceSearch) => {
+              navigate(t as Tab);
+              if (t === "ninja" && deviceSearch) setNinjaDeviceSearch(deviceSearch);
+            }}
+          />
+        )}
+        {tab === "guide"    && <GuideTab />}
+        {tab === "settings" && <SettingsTab />}
       </main>
     </div>
   );

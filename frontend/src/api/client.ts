@@ -48,6 +48,23 @@ export const api = {
     body: JSON.stringify(e),
   }),
   config: () => req<{ ninja_web_url: string }>("/config"),
+  getThreatIntelCves: (params: { days_back?: number; severity?: string; keyword?: string; device_filter?: boolean }) => {
+    const q = new URLSearchParams();
+    if (params.days_back)    q.set("days_back",     String(params.days_back));
+    if (params.severity)     q.set("severity",      params.severity);
+    if (params.keyword)      q.set("keyword",       params.keyword);
+    if (params.device_filter) q.set("device_filter", "true");
+    return req<ThreatIntelResponse>(`/threat-intel/cves?${q}`);
+  },
+  refreshThreatIntel: () => req<{ status: string }>("/threat-intel/refresh", { method: "POST" }),
+  getSettings: () => req<AppSettings>("/settings"),
+  saveSettings: (s: AppSettings) => req<{ ok: boolean }>("/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(s),
+  }),
+  testWazuhConnection: () => req<ConnectionTestResult>("/test-connection/wazuh", { method: "POST" }),
+  testNinjaConnection: () => req<ConnectionTestResult>("/test-connection/ninja", { method: "POST" }),
   wazuhAlertVolume: (timeframe: string) =>
     req<AlertBucket[]>(`/wazuh/alert-volume?timeframe=${timeframe}`),
   refreshWazuh: () => req("/wazuh/refresh", { method: "POST" }),
@@ -366,4 +383,115 @@ export interface NewSuppressionLog {
   reduction_pct?: number;
   notes?: string;
   total_alerts?: number;
+}
+
+export interface CveKeyword {
+  keyword: string;
+  enabled: boolean;
+}
+
+export interface AppSettings {
+  notifications_enabled: boolean;
+  notify_critical: boolean;
+  notify_high: boolean;
+  notify_medium: boolean;
+  notify_low: boolean;
+  notification_cooldown: number;
+  agent_green_minutes: number;
+  agent_yellow_minutes: number;
+  offline_yellow_hours: number;
+  offline_orange_hours: number;
+  fleet_green_pct: number;
+  fleet_amber_pct: number;
+  patch_yellow_days: number;
+  patch_orange_days: number;
+  cve_keywords: CveKeyword[];
+  default_theme: string;
+  default_time_window: string;
+  auto_refresh_interval: number;
+  noisy_rules_page_size: number;
+  alerts_page_size: number;
+  // Informational — from environment, not persisted
+  wazuh_url_display: string;
+  wazuh_username_display: string;
+  ninja_url_display: string;
+  wazuh_configured: boolean;
+  ninja_configured: boolean;
+}
+
+export interface CvssDetail {
+  version: string;
+  vector: string;
+  attackVector: string;
+  attackComplexity: string;
+  privilegesRequired: string;
+  userInteraction: string;
+  scope: string;
+  confidentiality: string;
+  integrity: string;
+  availability: string;
+  exploitabilityScore?: number;
+  impactScore?: number;
+}
+
+export interface AffectedDevice {
+  id: number;
+  systemName: string;
+  offline: boolean;
+  lastContact?: number;
+  os: string;
+}
+
+export interface CveReference {
+  url: string;
+  source?: string;
+  tags?: string[];
+}
+
+export interface CveItem {
+  cve_id: string;
+  published: string;
+  last_modified: string;
+  vuln_status: string;
+  description: string;
+  severity: "critical" | "high" | "medium" | "low" | "unknown";
+  cvss_score: number;
+  cvss_detail: CvssDetail | Record<string, never>;
+  affected_products: string[];
+  keyword: string;
+  references: CveReference[];
+  weaknesses: string[];
+  affected_devices: AffectedDevice[];
+  has_wazuh_coverage: boolean;
+  remediation_effort: "Patch Available" | "Workaround Only" | "No Fix Available";
+  has_known_exploit: boolean;
+}
+
+export interface DeviceExposure {
+  device: AffectedDevice;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  cve_count: number;
+}
+
+export interface ThreatIntelResponse {
+  cves: CveItem[];
+  device_exposure: DeviceExposure[];
+  last_updated: string;
+  keyword_count: number;
+  fetch_errors: string[];
+  total_critical: number;
+  total_high: number;
+  total_medium: number;
+  total_low: number;
+  total_affecting_devices: number;
+}
+
+export interface ConnectionTestResult {
+  status: "connected" | "failed";
+  latency_ms?: number;
+  timestamp?: string;
+  error?: string;
 }
