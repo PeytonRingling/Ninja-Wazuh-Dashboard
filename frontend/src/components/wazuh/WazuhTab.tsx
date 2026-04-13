@@ -5,8 +5,11 @@ import NoisyRules from "./NoisyRules";
 import SeverityDonut from "./SeverityDonut";
 import AlertTable from "./AlertTable";
 import AgentStatus from "./AgentStatus";
+import RuleChangeLog from "./RuleChangeLog";
 import ErrorState from "../ErrorState";
 import RefreshButton from "../RefreshButton";
+
+interface NavOptions { subTab?: string; agentName?: string; ruleId?: string; }
 
 interface Props {
   hasError: boolean;
@@ -14,9 +17,11 @@ interface Props {
   wazuhSummary: WazuhSummary | null;
   severityFilter: string;
   onSeverityChange: (s: string) => void;
+  navOptions?: NavOptions;
+  onNavConsumed?: () => void;
 }
 
-type SubTab = "overview" | "alerts" | "rules" | "agents";
+type SubTab = "overview" | "alerts" | "rules" | "agents" | "change_log";
 
 const HOUR_OPTIONS = [1, 3, 6, 12, 24] as const;
 
@@ -27,8 +32,17 @@ const SEV_BADGE: Record<string, string> = {
   low:      "badge-low",
 };
 
-export default function WazuhTab({ hasError, errorMsg, wazuhSummary, severityFilter, onSeverityChange }: Props) {
+export default function WazuhTab({ hasError, errorMsg, wazuhSummary, severityFilter, onSeverityChange, navOptions, onNavConsumed }: Props) {
   const [subTab, setSubTab] = useState<SubTab>("overview");
+
+  // Consume nav options from global search
+  useEffect(() => {
+    if (navOptions?.subTab) {
+      setSubTab(navOptions.subTab as SubTab);
+      if (navOptions.agentName) setAlertPage(0);
+      onNavConsumed?.();
+    }
+  }, [navOptions, onNavConsumed]);
   const [hoursBack, setHoursBack] = useState<number>(24);
 
   const [volume, setVolume] = useState<AlertBucket[] | null>(null);
@@ -133,6 +147,10 @@ export default function WazuhTab({ hasError, errorMsg, wazuhSummary, severityFil
       key: "agents", label: "Agents",
       icon: "M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2",
       count: agents?.length,
+    },
+    {
+      key: "change_log", label: "Change Log",
+      icon: "M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z",
     },
   ];
 
@@ -255,8 +273,14 @@ export default function WazuhTab({ hasError, errorMsg, wazuhSummary, severityFil
       )}
 
       {subTab === "agents" && (
-        <AgentStatus data={agents} error={agentsError} />
+        <AgentStatus
+          data={agents}
+          error={agentsError}
+          onFilterAlerts={(agentName) => { onSeverityChange(""); setAlertRuleId(""); setSubTab("alerts"); setAlertPage(0); }}
+        />
       )}
+
+      {subTab === "change_log" && <RuleChangeLog />}
     </div>
   );
 }

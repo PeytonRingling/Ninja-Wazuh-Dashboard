@@ -1,10 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { NinjaDevice } from "../../api/client";
 import { format } from "date-fns";
+import ContextMenu, { ContextMenuItem } from "../ContextMenu";
 
 interface Props {
   data: NinjaDevice[] | null;
   error: string | null;
+  initialSearch?: string;
+  ninjaWebUrl?: string;
+  onNavigateToWazuh?: (deviceName: string) => void;
 }
 
 function isOnline(device: NinjaDevice): boolean {
@@ -15,6 +19,26 @@ function isOnline(device: NinjaDevice): boolean {
     return Date.now() / 1000 - tsSec < 600;
   }
   return false;
+}
+
+function offlineDuration(device: NinjaDevice): { label: string; color: string } | null {
+  if (isOnline(device)) return null;
+  const ts = device.lastContact ?? device.lastSeenAt;
+  if (!ts) return null;
+  const tsSec = ts > 1e12 ? ts / 1000 : ts;
+  const diffSec = Math.floor(Date.now() / 1000 - tsSec);
+  if (diffSec < 0) return null;
+  const diffHrs = diffSec / 3600;
+  const color = diffHrs < 1 ? "text-yellow-400" : diffHrs < 24 ? "text-orange-400" : "text-red-400";
+  let label: string;
+  if (diffSec < 3600) label = `${Math.floor(diffSec / 60)}m`;
+  else if (diffSec < 86400) label = `${Math.floor(diffHrs)}h ${Math.floor((diffSec % 3600) / 60)}m`;
+  else {
+    const d = Math.floor(diffSec / 86400);
+    const h = Math.floor((diffSec % 86400) / 3600);
+    label = h > 0 ? `${d}d ${h}h` : `${d}d`;
+  }
+  return { label, color };
 }
 
 function fmtLastSeen(device: NinjaDevice): string {
@@ -49,7 +73,13 @@ function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
   );
 }
 
-function DeviceRow({ device }: { device: NinjaDevice }) {
+function DeviceRow({
+  device,
+  onContextMenu,
+}: {
+  device: NinjaDevice;
+  onContextMenu: (e: React.MouseEvent, device: NinjaDevice) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const online = isOnline(device);
   const name = device.displayName ?? device.systemName ?? `Device ${device.id}`;
@@ -59,6 +89,7 @@ function DeviceRow({ device }: { device: NinjaDevice }) {
     <>
       <tr
         onClick={() => setExpanded((e) => !e)}
+        onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, device); }}
         className={`border-b border-surface-700/50 cursor-pointer transition-colors hover:bg-surface-700/40 ${
           expanded ? "bg-surface-700/30" : ""
         }`}
@@ -71,9 +102,12 @@ function DeviceRow({ device }: { device: NinjaDevice }) {
                 online ? "bg-green-400 shadow-[0_0_6px_#4ade80]" : "bg-slate-500"
               }`}
             />
-            <span className={`text-xs font-medium ${online ? "text-green-400" : "text-slate-500"}`}>
-              {online ? "Online" : "Offline"}
-            </span>
+            <div className="flex flex-col leading-none">
+              <span className={`text-xs font-medium ${online ? "text-green-400" : "text-slate-500"}`}>
+                {online ? "Online" : "Offline"}
+              </span>
+              {!online && (() => { const od = offlineDuration(device); return od ? <span className={`text-[10px] mt-0.5 tabular-nums ${od.color}`}>{od.label}</span> : null; })()}
+            </div>
           </div>
         </td>
 
@@ -93,6 +127,11 @@ function DeviceRow({ device }: { device: NinjaDevice }) {
         {/* Type */}
         <td className="py-2.5 px-3 text-xs text-slate-500">{fmtNodeClass(device.nodeClass)}</td>
 
+        {/* Last User */}
+        <td className="py-2.5 px-3 text-xs text-slate-400 max-w-[120px]">
+          <span className="truncate block" title={device.lastLoggedOnUser}>{device.lastLoggedOnUser ?? "—"}</span>
+        </td>
+
         {/* RAM */}
         <td className="py-2.5 px-3 text-xs text-slate-400 text-right">{fmtRam(device)}</td>
 
@@ -110,7 +149,7 @@ function DeviceRow({ device }: { device: NinjaDevice }) {
       {/* Expanded details row */}
       {expanded && (
         <tr className="border-b border-surface-700/50 bg-surface-700/20">
-          <td colSpan={8} className="px-6 py-3">
+          <td colSpan={9} className="px-6 py-3">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-8 gap-y-2 text-xs">
               <div className="flex flex-col gap-0.5">
                 <span className="text-slate-500">Device ID</span>
@@ -168,11 +207,32 @@ function DeviceRow({ device }: { device: NinjaDevice }) {
   );
 }
 
-export default function DeviceGrid({ data, error }: Props) {
-  const [search, setSearch] = useState("");
+function exportCSV(devices: NinjaDevice[]) {
+  const headers = ["Name", "Status", "IP", "OS", "Type", "Last User", "RAM", "Last Seen"];
+  const rows = devices.map((d) => [
+    d.displayName ?? d.systemName ?? `Device ${d.id}`,
+    isOnline(d) ? "Online" : "Offline",
+    d.ipAddresses?.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a) && !a.startsWith("169.")) ?? "",
+    d.os?.name ?? "",
+    fmtNodeClass(d.nodeClass),
+    d.lastLoggedOnUser ?? "",
+    fmtRam(d),
+    fmtLastSeen(d),
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "devices.csv"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+export default function DeviceGrid({ data, error, initialSearch, ninjaWebUrl, onNavigateToWazuh }: Props) {
+  const [search, setSearch] = useState(initialSearch ?? "");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("status");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [ctx, setCtx] = useState<{ x: number; y: number; device: NinjaDevice } | null>(null);
 
   const onlineCount = data ? data.filter(isOnline).length : 0;
   const offlineCount = data ? data.length - onlineCount : 0;
@@ -216,6 +276,33 @@ export default function DeviceGrid({ data, error }: Props) {
 
     return list;
   }, [data, search, statusFilter, sortKey, sortDir]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, device: NinjaDevice) => {
+    setCtx({ x: e.clientX, y: e.clientY, device });
+  }, []);
+
+  const ctxItems: ContextMenuItem[] = ctx
+    ? [
+        ...(ninjaWebUrl
+          ? [{
+              label: "Open in NinjaOne",
+              icon: "M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14",
+              onClick: () => {
+                const name = ctx.device.displayName ?? ctx.device.systemName ?? "";
+                window.open(`${ninjaWebUrl.replace(/\/$/, "")}/devices?search=${encodeURIComponent(name)}`, "_blank");
+              },
+            }]
+          : []),
+        {
+          label: "View Wazuh Alerts",
+          icon: "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9",
+          onClick: () => {
+            const name = ctx.device.displayName ?? ctx.device.systemName ?? "";
+            onNavigateToWazuh?.(name);
+          },
+        },
+      ]
+    : [];
 
   const Th = ({ label, k }: { label: string; k: SortKey }) => (
     <th
@@ -281,6 +368,19 @@ export default function DeviceGrid({ data, error }: Props) {
               {f}
             </button>
           ))}
+
+          {/* CSV Export */}
+          {processed && processed.length > 0 && (
+            <button
+              onClick={() => exportCSV(processed)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white border border-surface-600 hover:border-surface-500 bg-surface-700 hover:bg-surface-600 transition-all"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              CSV
+            </button>
+          )}
         </div>
       </div>
 
@@ -306,6 +406,7 @@ export default function DeviceGrid({ data, error }: Props) {
                 <Th label="IP" k="ip" />
                 <Th label="OS" k="os" />
                 <Th label="Type" k="type" />
+                <th className="text-left py-2.5 px-3 text-xs font-medium text-slate-400">Last User</th>
                 <th className="text-right py-2.5 px-3 text-xs font-medium text-slate-400">RAM</th>
                 <Th label="Last Seen" k="lastSeen" />
                 <th className="w-8" />
@@ -313,11 +414,20 @@ export default function DeviceGrid({ data, error }: Props) {
             </thead>
             <tbody>
               {processed.map((device) => (
-                <DeviceRow key={device.id} device={device} />
+                <DeviceRow key={device.id} device={device} onContextMenu={handleContextMenu} />
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {ctx && (
+        <ContextMenu
+          x={ctx.x}
+          y={ctx.y}
+          items={ctxItems}
+          onClose={() => setCtx(null)}
+        />
       )}
     </div>
   );

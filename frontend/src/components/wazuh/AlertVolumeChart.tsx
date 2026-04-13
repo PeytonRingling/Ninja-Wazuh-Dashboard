@@ -19,10 +19,10 @@ interface Props {
 }
 
 const SEV_COLORS = {
-  critical: "#ef4444",
-  high: "#f97316",
-  medium: "#eab308",
-  low: "#22c55e",
+  critical: "#ff2d6d",
+  high:     "#ff6b35",
+  medium:   "#fbbf24",
+  low:      "#34d399",
 };
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -32,7 +32,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     formatted = format(parseISO(label), "MMM d HH:mm");
   } catch {}
   return (
-    <div className="bg-surface-700 border border-surface-500 rounded-lg p-3 shadow-xl text-xs">
+    <div className="bg-surface-700 border border-surface-600 rounded-xl p-3 shadow-2xl text-xs" style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(124,58,237,0.18)" }}>
       <p className="text-slate-300 mb-2 font-medium">{formatted}</p>
       {payload.map((p: any) => (
         <div key={p.dataKey} className="flex items-center gap-2 mb-1">
@@ -57,6 +57,11 @@ function formatXTick(value: string, timeframe: string) {
 }
 
 export default function AlertVolumeChart({ data, error, timeframe, onTimeframeChange }: Props) {
+  const isDark  = document.documentElement.classList.contains("dark");
+  const gridClr = isDark ? "#2d2b55" : "#e2e8f0";
+  const tickClr = isDark ? "#6e6c9e" : "#64748b";
+  const legClr  = isDark ? "#9896c8" : "#64748b";
+
   return (
     <div className="card h-full">
       <div className="flex items-center justify-between mb-4">
@@ -89,24 +94,24 @@ export default function AlertVolumeChart({ data, error, timeframe, onTimeframeCh
       ) : (
         <ResponsiveContainer width="100%" height={220}>
           <ComposedChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1a2540" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke={gridClr} vertical={false} />
             <XAxis
               dataKey="time"
               tickFormatter={(v) => formatXTick(v, timeframe)}
-              tick={{ fill: "#64748b", fontSize: 10 }}
+              tick={{ fill: tickClr, fontSize: 10 }}
               axisLine={false}
               tickLine={false}
               interval="preserveStartEnd"
             />
             <YAxis
-              tick={{ fill: "#64748b", fontSize: 10 }}
+              tick={{ fill: tickClr, fontSize: 10 }}
               axisLine={false}
               tickLine={false}
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend
-              wrapperStyle={{ fontSize: 11, color: "#94a3b8", paddingTop: 8 }}
-              formatter={(v) => <span style={{ color: "#94a3b8", textTransform: "capitalize" }}>{v}</span>}
+              wrapperStyle={{ fontSize: 11, color: legClr, paddingTop: 8 }}
+              formatter={(v) => <span style={{ color: legClr, textTransform: "capitalize" }}>{v}</span>}
             />
             <Bar dataKey="critical" stackId="a" fill={SEV_COLORS.critical} radius={[0, 0, 0, 0]} maxBarSize={40} />
             <Bar dataKey="high" stackId="a" fill={SEV_COLORS.high} maxBarSize={40} />

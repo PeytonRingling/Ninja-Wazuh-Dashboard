@@ -35,7 +35,7 @@ const SEV_LABEL: Record<Severity, string> = {
   critical: "Critical", high: "High", medium: "Medium", low: "Low", none: "Info",
 };
 const SEV_COLOR: Record<Severity, string> = {
-  critical: "#ef4444", high: "#f97316", medium: "#eab308", low: "#22c55e", none: "#475569",
+  critical: "#ff2d6d", high: "#ff6b35", medium: "#fbbf24", low: "#34d399", none: "#5b5a8a",
 };
 const SEV_BTN_ACTIVE: Record<string, string> = {
   critical: "bg-red-500/20 text-red-400 border-red-500/30",

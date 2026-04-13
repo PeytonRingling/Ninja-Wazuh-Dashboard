@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PatchSummary, PatchDetail, NinjaDevice } from "../../api/client";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
@@ -8,22 +8,45 @@ interface Props {
   data: PatchSummary | null;
   error: string | null;
   devices: NinjaDevice[];
+  focusDeviceId?: number;
+}
+
+function patchAge(installedAt?: string): { label: string; color: string } | null {
+  if (!installedAt) return null;
+  try {
+    const ageDays = Math.floor((Date.now() - new Date(installedAt).getTime()) / 86400000);
+    if (ageDays < 0) return null;
+    let label: string;
+    if (ageDays === 0) label = "Today";
+    else if (ageDays < 30) label = `${ageDays}d`;
+    else if (ageDays < 365) label = `${Math.floor(ageDays / 30)}mo`;
+    else label = `${Math.floor(ageDays / 365)}y`;
+    const color = ageDays < 30 ? "text-yellow-400" : ageDays < 90 ? "text-orange-400" : "text-red-400";
+    return { label, color };
+  } catch {
+    return null;
+  }
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  "Fully Patched": "#22c55e",
-  "Pending": "#eab308",
-  "Failed": "#ef4444",
+  "Fully Patched": "#34d399",
+  "Pending": "#fbbf24",
+  "Failed": "#ff2d6d",
 };
 
 function DevicePatchRow({
-  deviceName, patches, badgeClass,
+  deviceName, patches, badgeClass, initialExpanded,
 }: {
   deviceName: string;
   patches: PatchDetail[];
   badgeClass: string;
+  initialExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded ?? false);
+
+  useEffect(() => {
+    if (initialExpanded) setExpanded(true);
+  }, [initialExpanded]);
   const hasCritical = patches.some((p) => p.severity === "CRITICAL");
   const hasImportant = patches.some((p) => p.severity === "IMPORTANT");
   const topSev = hasCritical ? "CRITICAL" : hasImportant ? "IMPORTANT" : patches[0]?.severity ?? "—";
@@ -51,28 +74,43 @@ function DevicePatchRow({
           {patches.some((p) => p.type === "Software") && <span>Software</span>}
         </td>
       </tr>
-      {expanded && patches.map((p, i) => {
-        const patchLabel = p.name && p.name !== "—" ? p.name : "—";
-        return (
-          <tr key={i} className="border-b border-surface-700/30 bg-surface-700/10">
-            <td className="py-2 pl-10 pr-3 text-xs text-slate-300 max-w-sm">
-              <span className="block truncate" title={patchLabel}>{patchLabel}</span>
-              {p.identifier && (
-                <span className="font-mono text-accent text-xs">{p.identifier}</span>
-              )}
-            </td>
-            <td className="py-2 px-3 text-xs text-slate-500">{p.type ?? "—"}</td>
-            <td className="py-2 px-3 text-xs text-slate-400">{p.severity ?? "—"}</td>
-            <td className="py-2 px-3" />
-          </tr>
-        );
-      })}
+      {expanded && [...patches]
+        .sort((a, b) => {
+          const da = a.installedAt ? new Date(a.installedAt).getTime() : 0;
+          const db = b.installedAt ? new Date(b.installedAt).getTime() : 0;
+          return da - db; // oldest first
+        })
+        .map((p, i) => {
+          const patchLabel = p.name && p.name !== "—" ? p.name : "—";
+          const age = patchAge(p.installedAt);
+          return (
+            <tr key={i} className="border-b border-surface-700/30 bg-surface-700/10">
+              <td className="py-2 pl-10 pr-3 text-xs text-slate-300 max-w-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="truncate" title={patchLabel}>{patchLabel}</span>
+                  {age && (
+                    <span className={`shrink-0 text-[10px] tabular-nums font-medium ${age.color}`} title={p.installedAt}>
+                      {age.label}
+                    </span>
+                  )}
+                </div>
+                {p.identifier && (
+                  <span className="font-mono text-accent text-xs">{p.identifier}</span>
+                )}
+              </td>
+              <td className="py-2 px-3 text-xs text-slate-500">{p.type ?? "—"}</td>
+              <td className="py-2 px-3 text-xs text-slate-400">{p.severity ?? "—"}</td>
+              <td className="py-2 px-3" />
+            </tr>
+          );
+        })
+      }
     </>
   );
 }
 
 function PatchSection({
-  title, count, patches, deviceNameMap, badgeClass, colorClass,
+  title, count, patches, deviceNameMap, badgeClass, colorClass, focusDeviceId,
 }: {
   title: string;
   count: number;
@@ -80,16 +118,24 @@ function PatchSection({
   deviceNameMap: Map<number, string>;
   colorClass: string;
   badgeClass: string;
+  focusDeviceId?: number;
 }) {
   // Group patches by device
-  const byDevice = new Map<string, { name: string; patches: PatchDetail[] }>();
+  const byDevice = new Map<string, { id: number; name: string; patches: PatchDetail[] }>();
   for (const p of patches) {
     const name = deviceNameMap.get(p.deviceId) ?? `Device ${p.deviceId}`;
     const key = String(p.deviceId);
-    if (!byDevice.has(key)) byDevice.set(key, { name, patches: [] });
+    if (!byDevice.has(key)) byDevice.set(key, { id: p.deviceId, name, patches: [] });
     byDevice.get(key)!.patches.push(p);
   }
-  const deviceRows = [...byDevice.values()].sort((a, b) => b.patches.length - a.patches.length);
+  const deviceRows = [...byDevice.values()].sort((a, b) => {
+    // Focused device always first
+    if (focusDeviceId != null) {
+      if (a.id === focusDeviceId) return -1;
+      if (b.id === focusDeviceId) return 1;
+    }
+    return b.patches.length - a.patches.length;
+  });
 
   return (
     <div>
@@ -113,6 +159,7 @@ function PatchSection({
                 deviceName={row.name}
                 patches={row.patches}
                 badgeClass={badgeClass}
+                initialExpanded={focusDeviceId != null && row.id === focusDeviceId}
               />
             ))}
           </tbody>
@@ -124,8 +171,17 @@ function PatchSection({
 
 type PatchFilter = "all" | "failed" | "pending";
 
-export default function PatchCompliance({ data, error, devices }: Props) {
+export default function PatchCompliance({ data, error, devices, focusDeviceId }: Props) {
   const [filter, setFilter] = useState<PatchFilter>("all");
+
+  // When a device is focused, scroll to patch detail section and prefer showing its status
+  useEffect(() => {
+    if (focusDeviceId == null || !data) return;
+    const hasFailed = data.patch_details.some(p => p.deviceId === focusDeviceId && p.status === "FAILED");
+    const hasPending = data.patch_details.some(p => p.deviceId === focusDeviceId && p.status === "NEEDS_UPDATE");
+    if (hasFailed) setFilter("failed");
+    else if (hasPending) setFilter("pending");
+  }, [focusDeviceId, data]);
 
   const deviceNameMap = new Map<number, string>(
     devices.map((d) => [d.id, d.displayName ?? d.systemName ?? `Device ${d.id}`])
@@ -179,7 +235,7 @@ export default function PatchCompliance({ data, error, devices }: Props) {
                       className="h-full rounded-full transition-all"
                       style={{
                         width: `${Math.round((card.value / data.total_devices) * 100)}%`,
-                        background: card.color.includes("green") ? "#22c55e" : card.color.includes("yellow") ? "#eab308" : "#ef4444",
+                        background: card.color.includes("green") ? "#34d399" : card.color.includes("yellow") ? "#fbbf24" : "#ff2d6d",
                       }}
                     />
                   </div>
@@ -240,6 +296,7 @@ export default function PatchCompliance({ data, error, devices }: Props) {
                     deviceNameMap={deviceNameMap}
                     colorClass="text-red-400"
                     badgeClass="bg-red-500/10 border-red-500/30 text-red-400"
+                    focusDeviceId={focusDeviceId}
                   />
                 )}
                 {(filter === "all" || filter === "pending") && pending.length > 0 && (
@@ -250,6 +307,7 @@ export default function PatchCompliance({ data, error, devices }: Props) {
                     deviceNameMap={deviceNameMap}
                     colorClass="text-yellow-400"
                     badgeClass="bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
+                    focusDeviceId={focusDeviceId}
                   />
                 )}
               </div>

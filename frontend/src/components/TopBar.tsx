@@ -4,6 +4,8 @@ interface Props {
   summary: Summary | null;
   summaryError: string | null;
   onSeverityClick?: (severity: string) => void;
+  isDark?: boolean;
+  onThemeToggle?: () => void;
 }
 
 function SevBadge({
@@ -14,12 +16,12 @@ function SevBadge({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-opacity ${color} ${
-        onClick ? "cursor-pointer hover:opacity-80 active:scale-95" : "cursor-default"
+      className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all ${color} ${
+        onClick ? "cursor-pointer hover:opacity-90 active:scale-95" : "cursor-default"
       }`}
     >
-      <span className="text-xs opacity-70">{label}</span>
-      <span className="font-bold tabular-nums">{count.toLocaleString()}</span>
+      <span className="text-xs font-medium opacity-70 tracking-wide">{label}</span>
+      <span className="font-bold tabular-nums text-base leading-none">{count.toLocaleString()}</span>
     </button>
   );
 }
@@ -34,41 +36,68 @@ function Dot({ online }: { online: boolean }) {
   );
 }
 
-export default function TopBar({ summary, summaryError, onSeverityClick }: Props) {
+export default function TopBar({ summary, summaryError, onSeverityClick, isDark, onThemeToggle }: Props) {
   const w = summary?.wazuh;
   const n = summary?.ninja;
 
   return (
-    <header className="bg-surface-800 border-b border-surface-600 sticky top-0 z-20 shadow-xl">
+    <header
+      className="sticky top-0 z-20"
+      style={isDark ? {
+        background:   "#0d0d1a",
+        borderBottom: "1px solid transparent",
+        backgroundImage: "linear-gradient(#0d0d1a, #0d0d1a), linear-gradient(90deg, #7c3aed, #a855f7)",
+        backgroundOrigin: "padding-box, border-box",
+        backgroundClip: "padding-box, border-box",
+        boxShadow:    "0 4px 32px rgba(0,0,0,0.6)",
+      } : {
+        background:   "#ffffff",
+        borderBottom: "1px solid #e2e8f0",
+        boxShadow:    "0 1px 16px rgba(99, 102, 241, 0.07)",
+      }}
+    >
       <div className="max-w-screen-2xl mx-auto px-6 py-3 flex items-center gap-6">
+
         {/* Logo / Brand */}
         <div className="flex items-center gap-3 shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-accent/20 border border-accent/30 flex items-center justify-center">
-            <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{
+              background: "linear-gradient(135deg, rgba(124,58,237,0.22), rgba(168,85,247,0.12))",
+              border: "1px solid rgba(124,58,237,0.40)",
+              boxShadow: "0 0 18px rgba(124,58,237,0.25)",
+            }}
+          >
+            <svg className="w-4.5 h-4.5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
           </div>
-          <span className="text-sm font-semibold text-slate-100 hidden sm:block">OPS Dashboard</span>
+          <span
+            className="text-sm font-bold hidden sm:block tracking-wide"
+            style={{ background: "linear-gradient(135deg, #a855f7, #7c3aed)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}
+          >
+            OPS DASHBOARD
+          </span>
         </div>
 
         <div className="h-5 w-px bg-surface-600" />
 
         {/* Wazuh Severity Summary */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-slate-500 uppercase tracking-wider shrink-0">Alerts</span>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <span className="text-[10px] text-slate-600 uppercase tracking-widest font-semibold shrink-0">Live Alerts</span>
           {w ? (
             <>
-              <SevBadge label="Crit" count={w.critical} color="badge-critical" onClick={() => onSeverityClick?.("critical")} />
-              <SevBadge label="High" count={w.high} color="badge-high" onClick={() => onSeverityClick?.("high")} />
-              <SevBadge label="Med" count={w.medium} color="badge-medium" onClick={() => onSeverityClick?.("medium")} />
-              <SevBadge label="Low" count={w.low} color="badge-low" onClick={() => onSeverityClick?.("low")} />
+              <SevBadge label="Critical" count={w.critical} color="badge-critical" onClick={() => onSeverityClick?.("critical")} />
+              <SevBadge label="High"     count={w.high}     color="badge-high"     onClick={() => onSeverityClick?.("high")} />
+              <SevBadge label="Medium"   count={w.medium}   color="badge-medium"   onClick={() => onSeverityClick?.("medium")} />
+              <SevBadge label="Low"      count={w.low}      color="badge-low"      onClick={() => onSeverityClick?.("low")} />
             </>
           ) : summary?.wazuh_error ? (
             <span className="text-xs text-red-400">Wazuh offline</span>
           ) : (
             <div className="flex gap-2">
               {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="skeleton h-7 w-16 rounded-lg" />
+                <div key={i} className="skeleton h-8 w-20 rounded-lg" />
               ))}
             </div>
           )}
@@ -78,17 +107,17 @@ export default function TopBar({ summary, summaryError, onSeverityClick }: Props
 
         {/* NinjaOne Device Status */}
         <div className="hidden md:flex items-center gap-3">
-          <span className="text-xs text-slate-500 uppercase tracking-wider">Devices</span>
+          <span className="text-[10px] text-slate-600 uppercase tracking-widest font-semibold">Devices</span>
           {n ? (
-            <div className="flex items-center gap-3 text-sm">
+            <div className="flex items-center gap-4 text-sm">
               <div className="flex items-center gap-1.5">
                 <Dot online={true} />
-                <span className="font-semibold text-green-400">{n.online}</span>
+                <span className="font-bold text-green-400">{n.online}</span>
                 <span className="text-slate-500 text-xs">online</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <Dot online={false} />
-                <span className="font-semibold text-slate-400">{n.offline}</span>
+                <span className="font-bold text-slate-400">{n.offline}</span>
                 <span className="text-slate-500 text-xs">offline</span>
               </div>
             </div>
@@ -103,10 +132,19 @@ export default function TopBar({ summary, summaryError, onSeverityClick }: Props
         {w && w.critical > 0 && (
           <button
             onClick={() => onSeverityClick?.("critical")}
-            className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-medium animate-pulse hover:bg-red-500/20 transition-colors cursor-pointer"
+            className="ml-auto flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-all"
+            style={{
+              background: "rgba(255,45,109,0.12)",
+              border: "1px solid rgba(255,45,109,0.35)",
+              color: "#ff2d6d",
+              animation: "pulseGlowCritical 2s ease-in-out infinite",
+            }}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
-            {w.critical} critical alert{w.critical !== 1 ? "s" : ""} require attention
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: "#ff2d6d" }} />
+              <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: "#ff2d6d" }} />
+            </span>
+            {w.critical} critical {w.critical !== 1 ? "alerts" : "alert"} — action required
           </button>
         )}
 
@@ -114,6 +152,25 @@ export default function TopBar({ summary, summaryError, onSeverityClick }: Props
           <div className="ml-auto text-xs text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg border border-red-500/20">
             {summaryError}
           </div>
+        )}
+
+        {/* Theme toggle */}
+        {onThemeToggle && (
+          <button
+            onClick={onThemeToggle}
+            className="ml-auto p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-surface-700 transition-colors shrink-0"
+            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {isDark ? (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            )}
+          </button>
         )}
       </div>
     </header>

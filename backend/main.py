@@ -1,8 +1,11 @@
+import csv
+import io
 import logging
 import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 # Ensure backend/ is always first on sys.path so imports work regardless of CWD
 _backend_dir = str(Path(__file__).parent.resolve())
@@ -12,7 +15,9 @@ if _backend_dir not in sys.path:
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 # Load .env from project root (one level up from backend/)
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -22,6 +27,7 @@ from wazuh_client import WazuhClient
 from ninja_client import NinjaClient
 from indexer_client import IndexerClient
 import cache
+import db as db_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -57,6 +63,9 @@ async def lifespan(app: FastAPI):
 
     wazuh = WazuhClient(wazuh_auth, indexer)
     ninja = NinjaClient(ninja_auth)
+
+    # Initialize suppression log DB
+    db_module.init_db()
 
     # Pre-authenticate both
     try:
@@ -141,6 +150,46 @@ async def get_alert_volume(timeframe: str = Query("24h", pattern="^(24h|7d|30d)$
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@app.get("/api/wazuh/rule-breakdown")
+async def get_rule_breakdown(
+    rule_id: str = Query(...),
+    hours_back: int = Query(24, ge=1, le=168),
+):
+    try:
+        return await wazuh.get_rule_breakdown(rule_id, hours_back)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/wazuh/rule-trend")
+async def get_rule_trend(rule_id: str = Query(...)):
+    try:
+        return await wazuh.get_rule_trend(rule_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/wazuh/rule-detail")
+async def get_rule_detail_endpoint(rule_id: str = Query(...)):
+    try:
+        return await wazuh.get_rule_detail(rule_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/wazuh/rule-dimension-detail")
+async def get_rule_dimension_detail(
+    rule_id:    str = Query(...),
+    field:      str = Query(...),
+    value:      str = Query(...),
+    hours_back: int = Query(24, ge=1, le=168),
+):
+    try:
+        return await wazuh.get_rule_dimension_detail(rule_id, field, value, hours_back)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @app.get("/api/wazuh/agent-alert-summary")
 async def get_agent_alert_summary(hours_back: int = Query(24, ge=1, le=168)):
     try:
@@ -155,6 +204,96 @@ async def refresh_wazuh():
         if key.startswith("wazuh"):
             cache.invalidate(key)
     return {"status": "ok"}
+
+
+@app.post("/api/wazuh/agents/{agent_id}/restart")
+async def restart_wazuh_agent(agent_id: str):
+    try:
+        return await wazuh.restart_agent(agent_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+# ── Suppression Change Log ─────────────────────────────────────────────────────
+
+class SuppressionLogIn(BaseModel):
+    rule_id: str
+    description: str
+    alert_count: int
+    reduction_pct: Optional[float] = None
+    notes: Optional[str] = None
+    total_alerts: Optional[int] = None
+
+
+@app.get("/api/wazuh/suppression-log")
+async def list_suppression_log():
+    return db_module.get_all()
+
+
+@app.post("/api/wazuh/suppression-log")
+async def create_suppression_log(entry: SuppressionLogIn):
+    return db_module.add_entry(
+        entry.rule_id, entry.description, entry.alert_count,
+        entry.reduction_pct, entry.notes, entry.total_alerts,
+    )
+
+
+@app.get("/api/wazuh/suppression-log/export")
+async def export_suppression_log():
+    rows = db_module.get_all()
+    buf = io.StringIO()
+    writer = csv.DictWriter(
+        buf,
+        fieldnames=["id", "created_at", "rule_id", "description",
+                    "alert_count", "reduction_pct", "notes", "total_alerts"],
+    )
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=suppression_log.csv"},
+    )
+
+
+# ── Changelog ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/changelog")
+async def list_changelog():
+    return db_module.get_changelog()
+
+
+@app.post("/api/changelog")
+async def create_changelog_entry(entry: SuppressionLogIn):
+    return db_module.add_changelog_entry(
+        entry.rule_id, entry.description, entry.alert_count,
+        entry.reduction_pct, entry.notes, entry.total_alerts,
+    )
+
+
+@app.get("/api/changelog/export")
+async def export_changelog():
+    rows = db_module.get_changelog()
+    buf = io.StringIO()
+    writer = csv.DictWriter(
+        buf,
+        fieldnames=["id", "created_at", "rule_id", "description",
+                    "alert_count", "reduction_pct", "notes", "total_alerts"],
+    )
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=changelog.csv"},
+    )
+
+
+# ── Config ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/config")
+async def get_config():
+    return {"ninja_web_url": os.getenv("NINJA_WEB_URL", "")}
 
 
 # ── NinjaOne ───────────────────────────────────────────────────────────────────

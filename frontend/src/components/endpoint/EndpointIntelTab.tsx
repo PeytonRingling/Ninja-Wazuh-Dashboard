@@ -106,11 +106,11 @@ function getDeviceIPs(d: CorrelatedDevice): string[] {
 
 function FleetScoreRing({ score, loading }: { score: number; loading: boolean }) {
   const r = 38, circ = 2 * Math.PI * r;
-  const ringColor = score >= 80 ? "#4ade80" : score >= 60 ? "#facc15" : score >= 40 ? "#fb923c" : "#f87171";
+  const ringColor = score >= 80 ? "#34d399" : score >= 60 ? "#fbbf24" : score >= 40 ? "#ff6b35" : "#ff2d6d";
   return (
     <div className="relative flex items-center justify-center w-28 h-28 shrink-0">
       <svg width="112" height="112" viewBox="0 0 112 112" className="-rotate-90">
-        <circle cx="56" cy="56" r={r} fill="none" stroke="#1e293b" strokeWidth="7" />
+        <circle cx="56" cy="56" r={r} fill="none" stroke="#2d2b55" strokeWidth="7" />
         {!loading && (
           <circle cx="56" cy="56" r={r} fill="none" stroke={ringColor} strokeWidth="7" strokeLinecap="round"
             strokeDasharray={circ} strokeDashoffset={circ * (1 - score / 100)}
@@ -879,11 +879,11 @@ export default function EndpointIntelTab() {
             <div className="relative flex items-center justify-center w-36 h-36 shrink-0">
               {(() => {
                 const r = 52, circ = 2 * Math.PI * r;
-                const ringColor = stats.score >= 80 ? "#4ade80" : stats.score >= 60 ? "#facc15" : stats.score >= 40 ? "#fb923c" : "#f87171";
+                const ringColor = stats.score >= 80 ? "#34d399" : stats.score >= 60 ? "#fbbf24" : stats.score >= 40 ? "#ff6b35" : "#ff2d6d";
                 return (
                   <>
                     <svg width="144" height="144" viewBox="0 0 144 144" className="-rotate-90">
-                      <circle cx="72" cy="72" r={r} fill="none" stroke="#1e293b" strokeWidth="9" />
+                      <circle cx="72" cy="72" r={r} fill="none" stroke="#2d2b55" strokeWidth="9" />
                       {!loading && (
                         <circle cx="72" cy="72" r={r} fill="none" stroke={ringColor} strokeWidth="9"
                           strokeLinecap="round" strokeDasharray={circ}

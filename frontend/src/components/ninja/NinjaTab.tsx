@@ -9,11 +9,14 @@ import RefreshButton from "../RefreshButton";
 interface Props {
   hasError: boolean;
   errorMsg?: string;
+  initialDeviceSearch?: string;
+  initialPatchDeviceId?: number;
+  onNavigateToWazuh?: (agentName: string) => void;
 }
 
 type SubTab = "devices" | "patches" | "activity";
 
-export default function NinjaTab({ hasError, errorMsg }: Props) {
+export default function NinjaTab({ hasError, errorMsg, initialDeviceSearch, initialPatchDeviceId, onNavigateToWazuh }: Props) {
   const [subTab, setSubTab] = useState<SubTab>("devices");
 
   const [devices, setDevices] = useState<NinjaDevice[] | null>(null);
@@ -28,6 +31,22 @@ export default function NinjaTab({ hasError, errorMsg }: Props) {
   const [activityType, setActivityType] = useState("");
 
   const [refreshing, setRefreshing] = useState(false);
+  const [ninjaWebUrl, setNinjaWebUrl] = useState<string | undefined>(undefined);
+
+  // Navigate to devices sub-tab when initialDeviceSearch is provided
+  useEffect(() => {
+    if (initialDeviceSearch) setSubTab("devices");
+  }, [initialDeviceSearch]);
+
+  // Navigate to patches sub-tab when a specific device patch focus is requested
+  useEffect(() => {
+    if (initialPatchDeviceId != null) setSubTab("patches");
+  }, [initialPatchDeviceId]);
+
+  // Fetch config for NinjaOne web URL
+  useEffect(() => {
+    api.config().then(c => setNinjaWebUrl(c.ninja_web_url || undefined)).catch(() => {});
+  }, []);
 
   const loadDevices = useCallback(async () => {
     setDevicesError(null);
@@ -187,10 +206,16 @@ export default function NinjaTab({ hasError, errorMsg }: Props) {
 
       {/* ── Sub-tab content ── */}
       {subTab === "devices" && (
-        <DeviceGrid data={devices} error={devicesError} />
+        <DeviceGrid
+          data={devices}
+          error={devicesError}
+          initialSearch={initialDeviceSearch}
+          ninjaWebUrl={ninjaWebUrl}
+          onNavigateToWazuh={onNavigateToWazuh}
+        />
       )}
       {subTab === "patches" && (
-        <PatchCompliance data={patches} error={patchesError} devices={devices ?? []} />
+        <PatchCompliance data={patches} error={patchesError} devices={devices ?? []} focusDeviceId={initialPatchDeviceId} />
       )}
       {subTab === "activity" && (
         <RecentActivity

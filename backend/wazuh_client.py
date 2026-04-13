@@ -42,6 +42,20 @@ class WazuhClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def _mgr_put(self, path: str, body: dict = None) -> Any:
+        headers = await self.auth.headers()
+        async with httpx.AsyncClient(verify=False, timeout=30) as client:
+            resp = await client.put(
+                f"{self.base_url}{path}",
+                headers=headers,
+                json=body or {},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def restart_agent(self, agent_id: str) -> dict:
+        return await self._mgr_put(f"/agents/{agent_id}/restart")
+
     # ── Summary (top bar) ─────────────────────────────────────────────────────
 
     async def get_summary(self) -> dict:
@@ -141,7 +155,7 @@ class WazuhClient:
                 "top_rules": {
                     "terms": {
                         "field": "rule.id",
-                        "size": 20,
+                        "size": 500,
                         "order": {"_count": "desc"},
                     },
                     "aggs": {
@@ -266,6 +280,410 @@ class WazuhClient:
 
         cache.set(cache_key, summary, ttl=120)
         return summary
+
+    # ── Rule breakdown (drill-down) ───────────────────────────────────────────
+
+    async def get_rule_breakdown(self, rule_id: str, hours_back: int = 24) -> dict:
+        cache_key = f"wazuh_rule_breakdown_{rule_id}_{hours_back}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        result = await self.indexer.search({
+            "size": 0,
+            "query": {
+                "bool": {
+                    "must": [
+                        {"range": {"timestamp": {"gte": f"now-{hours_back}h"}}},
+                        {"term": {"rule.id": rule_id}},
+                    ]
+                }
+            },
+            "aggs": {
+                # Per-field top values — adapts to rule type (FIM, Windows event, PAM, etc.)
+                "top_agents":          {"terms": {"field": "agent.name",                        "size": 20}},
+                "top_event_ids":       {"terms": {"field": "data.win.system.eventID",            "size": 10}},
+                "top_users":           {"terms": {"field": "data.win.eventdata.subjectUserName", "size": 10}},
+                "top_src_ips":         {"terms": {"field": "data.srcip",                         "size": 10}},
+                # FIM / syscheck fields
+                "top_syscheck_paths":  {"terms": {"field": "syscheck.path",                      "size": 20}},
+                "top_syscheck_events": {"terms": {"field": "syscheck.event",                     "size": 5}},
+                # Auth / generic data fields
+                "top_srcusers":        {"terms": {"field": "data.srcuser",                       "size": 10}},
+                "top_decoders":        {"terms": {"field": "decoder.name",                       "size": 10}},
+                "top_locations":       {"terms": {"field": "location",                           "size": 15}},
+                # Hourly activity chart
+                "hourly": {
+                    "date_histogram": {
+                        "field": "timestamp",
+                        "fixed_interval": "1h",
+                        "min_doc_count": 0,
+                    }
+                },
+                # 10 most recent actual alerts — lets analyst see real content
+                "samples": {
+                    "top_hits": {
+                        "size": 10,
+                        "sort": [{"timestamp": {"order": "desc"}}],
+                        "_source": [
+                            "timestamp", "agent",
+                            "decoder.name", "location",
+                            "syscheck.path", "syscheck.event",
+                            "data.srcuser",
+                            "data.win.system.eventID", "data.win.system.channel",
+                            "data.win.system.message", "data.win.system.providerName",
+                            "data.win.eventdata.subjectUserName",
+                            "data.win.eventdata.targetUserName",
+                            "data.srcip",
+                        ]
+                    }
+                },
+            },
+        })
+
+        aggs = result["aggregations"]
+
+        def buckets(key):
+            return [
+                {"value": b["key"], "count": b["doc_count"]}
+                for b in aggs[key]["buckets"]
+                if b["doc_count"] > 0
+            ]
+
+        hourly = [
+            {
+                "time": datetime.fromtimestamp(b["key"] / 1000, tz=timezone.utc).isoformat(),
+                "count": b["doc_count"],
+            }
+            for b in aggs["hourly"]["buckets"]
+        ]
+
+        # Flatten sample alerts into a consistent shape
+        sample_alerts = []
+        for hit in aggs["samples"]["hits"]["hits"]:
+            src = hit["_source"]
+            win      = (src.get("data") or {}).get("win") or {}
+            syscheck = src.get("syscheck") or {}
+            sample_alerts.append({
+                "timestamp":      src.get("timestamp"),
+                "agent_name":     (src.get("agent") or {}).get("name"),
+                "decoder":        (src.get("decoder") or {}).get("name"),
+                "location":       src.get("location"),
+                "syscheck_path":  syscheck.get("path"),
+                "syscheck_event": syscheck.get("event"),
+                "event_id":       (win.get("system") or {}).get("eventID"),
+                "channel":        (win.get("system") or {}).get("channel"),
+                "message":        (win.get("system") or {}).get("message"),
+                "provider":       (win.get("system") or {}).get("providerName"),
+                "user":           (win.get("eventdata") or {}).get("subjectUserName"),
+                "tgt_user":       (win.get("eventdata") or {}).get("targetUserName"),
+                "src_ip":         (src.get("data") or {}).get("srcip"),
+                "srcuser":        (src.get("data") or {}).get("srcuser"),
+            })
+
+        breakdown = {
+            "rule_id":             rule_id,
+            "total":               result["hits"]["total"]["value"],
+            "top_agents":          buckets("top_agents"),
+            "top_event_ids":       buckets("top_event_ids"),
+            "top_users":           buckets("top_users"),
+            "top_src_ips":         buckets("top_src_ips"),
+            "top_syscheck_paths":  buckets("top_syscheck_paths"),
+            "top_syscheck_events": buckets("top_syscheck_events"),
+            "top_srcusers":        buckets("top_srcusers"),
+            "top_decoders":        buckets("top_decoders"),
+            "top_locations":       buckets("top_locations"),
+            "hourly_pattern":      hourly,
+            "sample_alerts":       sample_alerts,
+        }
+        cache.set(cache_key, breakdown, ttl=60)
+        return breakdown
+
+    # ── Rule dimension detail (per-value drill-down) ─────────────────────────
+
+    # Maps frontend field keys to OpenSearch field names
+    _FIELD_MAP = {
+        "agent":          "agent.name",
+        "syscheck_path":  "syscheck.path",
+        "syscheck_event": "syscheck.event",
+        "event_id":       "data.win.system.eventID",
+        "user":           "data.win.eventdata.subjectUserName",
+        "srcuser":        "data.srcuser",
+        "src_ip":         "data.srcip",
+        "location":       "location",
+        "decoder":        "decoder.name",
+    }
+
+    async def get_rule_dimension_detail(
+        self, rule_id: str, field: str, value: str, hours_back: int = 24
+    ) -> dict:
+        es_field = self._FIELD_MAP.get(field)
+        if not es_field:
+            return {}
+
+        cache_key = f"wazuh_dim_{rule_id}_{field}_{value}_{hours_back}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        result = await self.indexer.search({
+            "size": 0,
+            "query": {
+                "bool": {
+                    "must": [
+                        {"range": {"timestamp": {"gte": f"now-{hours_back}h"}}},
+                        {"term": {"rule.id": rule_id}},
+                        {"term": {es_field: value}},
+                    ]
+                }
+            },
+            "aggs": {
+                "by_agent":               {"terms": {"field": "agent.name",                        "size": 10}},
+                "by_syscheck_event":      {"terms": {"field": "syscheck.event",                    "size": 5}},
+                "by_syscheck_path":       {"terms": {"field": "syscheck.path",                     "size": 10}},
+                "by_value_name":          {"terms": {"field": "syscheck.value_name",               "size": 20}},
+                "by_value_type":          {"terms": {"field": "syscheck.value_type",               "size": 10}},
+                "by_changed_attributes":  {"terms": {"field": "syscheck.changed_attributes",       "size": 10}},
+                "by_user":                {"terms": {"field": "data.win.eventdata.subjectUserName", "size": 5}},
+                "by_event_id":            {"terms": {"field": "data.win.system.eventID",            "size": 5}},
+                "by_location":            {"terms": {"field": "location",                          "size": 5}},
+                "hourly": {
+                    "date_histogram": {
+                        "field": "timestamp",
+                        "fixed_interval": "1h",
+                        "min_doc_count": 0,
+                    }
+                },
+                "first_seen": {"min": {"field": "timestamp"}},
+                "last_seen":  {"max": {"field": "timestamp"}},
+                # Sample alerts — pull message and syscheck detail fields
+                "samples": {
+                    "top_hits": {
+                        "size": 5,
+                        "sort": [{"timestamp": {"order": "desc"}}],
+                        "_source": [
+                            "timestamp", "agent",
+                            # FIM / syscheck fields
+                            "syscheck.path", "syscheck.event",
+                            "syscheck.value_name", "syscheck.value_type",
+                            "syscheck.changed_attributes",
+                            "syscheck.content_changes",
+                            "syscheck.sha1_before", "syscheck.sha1_after",
+                            "syscheck.size_before", "syscheck.size_after",
+                            "syscheck.mtime_after",
+                            "syscheck.uname_after", "syscheck.gname_after",
+                            "syscheck.perm_after",
+                            # Windows event fields
+                            "data.win.system.eventID",
+                            "data.win.system.message",
+                            "data.win.system.providerName",
+                            "data.win.system.channel",
+                            "data.win.eventdata.subjectUserName",
+                            "data.win.eventdata.targetUserName",
+                            "data.srcip", "data.srcuser",
+                            "decoder.name", "location",
+                        ]
+                    }
+                },
+            },
+        })
+
+        aggs = result["aggregations"]
+
+        def bkts(key):
+            return [
+                {"value": b["key"], "count": b["doc_count"]}
+                for b in aggs[key]["buckets"]
+                if b["doc_count"] > 0
+            ]
+
+        hourly = [
+            {
+                "time":  datetime.fromtimestamp(b["key"] / 1000, tz=timezone.utc).isoformat(),
+                "count": b["doc_count"],
+            }
+            for b in aggs["hourly"]["buckets"]
+        ]
+
+        # Extract sample alerts with full syscheck + Windows event fields
+        samples = []
+        for hit in aggs["samples"]["hits"]["hits"]:
+            src = hit["_source"]
+            win      = (src.get("data") or {}).get("win") or {}
+            syscheck = src.get("syscheck") or {}
+            samples.append({
+                "timestamp":                  src.get("timestamp"),
+                "agent_name":                 (src.get("agent") or {}).get("name"),
+                "decoder":                    (src.get("decoder") or {}).get("name"),
+                "location":                   src.get("location"),
+                "syscheck_path":              syscheck.get("path"),
+                "syscheck_event":             syscheck.get("event"),
+                "syscheck_value_name":        syscheck.get("value_name"),
+                "syscheck_value_type":        syscheck.get("value_type"),
+                "syscheck_changed_attributes": syscheck.get("changed_attributes"),
+                "syscheck_content_changes":   syscheck.get("content_changes"),
+                "syscheck_sha1_before":       syscheck.get("sha1_before"),
+                "syscheck_sha1_after":        syscheck.get("sha1_after"),
+                "syscheck_size_before":       syscheck.get("size_before"),
+                "syscheck_size_after":        syscheck.get("size_after"),
+                "syscheck_mtime_after":       syscheck.get("mtime_after"),
+                "syscheck_uname_after":       syscheck.get("uname_after"),
+                "syscheck_perm_after":        syscheck.get("perm_after"),
+                "event_id":                   (win.get("system") or {}).get("eventID"),
+                "channel":                    (win.get("system") or {}).get("channel"),
+                "message":                    (win.get("system") or {}).get("message"),
+                "provider":                   (win.get("system") or {}).get("providerName"),
+                "user":                       (win.get("eventdata") or {}).get("subjectUserName"),
+                "tgt_user":                   (win.get("eventdata") or {}).get("targetUserName"),
+                "src_ip":                     (src.get("data") or {}).get("srcip"),
+                "srcuser":                    (src.get("data") or {}).get("srcuser"),
+            })
+
+        detail = {
+            "total":                  result["hits"]["total"]["value"],
+            "by_agent":               bkts("by_agent"),
+            "by_syscheck_event":      bkts("by_syscheck_event"),
+            "by_syscheck_path":       bkts("by_syscheck_path"),
+            "by_value_name":          bkts("by_value_name"),
+            "by_value_type":          bkts("by_value_type"),
+            "by_changed_attributes":  bkts("by_changed_attributes"),
+            "by_user":                bkts("by_user"),
+            "by_event_id":            bkts("by_event_id"),
+            "by_location":            bkts("by_location"),
+            "hourly":                 hourly,
+            "first_seen":             aggs["first_seen"].get("value_as_string"),
+            "last_seen":              aggs["last_seen"].get("value_as_string"),
+            "samples":                samples,
+        }
+        cache.set(cache_key, detail, ttl=60)
+        return detail
+
+    # ── Rule detail (manager API) ─────────────────────────────────────────────
+
+    async def get_rule_detail(self, rule_id: str) -> dict:
+        cache_key = f"wazuh_rule_detail_{rule_id}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        try:
+            data = await self._mgr_get("/rules", {"rule_ids": rule_id})
+            items = data.get("data", {}).get("affected_items", [])
+            if not items:
+                return {}
+
+            item = items[0]
+
+            # MITRE may live at top level or nested under details.mitre — check both
+            mitre_top     = item.get("mitre") or {}
+            mitre_details = (item.get("details") or {}).get("mitre") or {}
+            mitre = mitre_top if mitre_top else mitre_details
+
+            details = item.get("details") or {}
+            result = {
+                "id":          item.get("id"),
+                "description": item.get("description", ""),
+                "level":       item.get("level"),
+                "filename":    item.get("filename", ""),
+                "if_sid":      details.get("if_sid", ""),
+                "groups":      item.get("groups", []),
+                "pci_dss":     item.get("pci_dss", []),
+                "nist_800_53": item.get("nist_800_53", []),
+                "gdpr":        item.get("gdpr", []),
+                "hipaa":       item.get("hipaa", []),
+                "tsc":         item.get("tsc", []),
+                "mitre": {
+                    "id":        mitre.get("id", []),
+                    "technique": mitre.get("technique", []),
+                    "tactic":    mitre.get("tactic", []),
+                },
+            }
+
+            cache.set(cache_key, result, ttl=300)
+            return result
+
+        except Exception as e:
+            logger.warning(f"get_rule_detail({rule_id}) failed: {e}")
+            return {}
+
+    # ── Rule trend (7-day daily breakdown) ───────────────────────────────────
+
+    async def get_rule_trend(self, rule_id: str) -> dict:
+        cache_key = f"wazuh_trend_{rule_id}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        try:
+            result = await self.indexer.search({
+                "size": 0,
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"range": {"timestamp": {"gte": "now-7d"}}},
+                            {"term": {"rule.id": rule_id}},
+                        ]
+                    }
+                },
+                "aggs": {
+                    "daily": {
+                        "date_histogram": {
+                            "field": "timestamp",
+                            "calendar_interval": "1d",
+                            "min_doc_count": 0,
+                        }
+                    },
+                    "top_processes": {
+                        "terms": {"field": "data.win.eventdata.image", "size": 5}
+                    },
+                },
+            })
+
+            daily_buckets = result["aggregations"]["daily"]["buckets"]
+            daily = [
+                {
+                    "date":  datetime.fromtimestamp(b["key"] / 1000, tz=timezone.utc).strftime("%Y-%m-%d"),
+                    "count": b["doc_count"],
+                }
+                for b in daily_buckets
+            ]
+
+            counts = [b["doc_count"] for b in daily_buckets]
+            total_7d = result["hits"]["total"]["value"]
+
+            # Trend: compare first half vs second half
+            if len(counts) >= 4:
+                mid = len(counts) // 2
+                first_avg = sum(counts[:mid]) / mid
+                last_avg  = sum(counts[mid:]) / (len(counts) - mid)
+                if first_avg > 0:
+                    change_pct = ((last_avg - first_avg) / first_avg) * 100
+                else:
+                    change_pct = 100.0 if last_avg > 0 else 0.0
+                trend = "up" if change_pct > 15 else "down" if change_pct < -15 else "flat"
+            else:
+                change_pct = 0.0
+                trend = "flat"
+
+            top_processes = [
+                {"value": b["key"].split("\\")[-1], "count": b["doc_count"]}
+                for b in result["aggregations"]["top_processes"]["buckets"]
+                if b["doc_count"] > 0
+            ]
+
+            out = {
+                "daily":         daily,
+                "total_7d":      total_7d,
+                "trend":         trend,
+                "trend_pct":     round(abs(change_pct)),
+                "top_processes": top_processes,
+            }
+            cache.set(cache_key, out, ttl=120)
+            return out
+
+        except Exception as e:
+            logger.warning(f"get_rule_trend({rule_id}) failed: {e}")
+            return {"daily": [], "total_7d": 0, "trend": "flat", "trend_pct": 0, "top_processes": []}
 
     # ── Agents (manager API) ──────────────────────────────────────────────────
 

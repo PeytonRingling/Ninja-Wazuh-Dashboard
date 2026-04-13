@@ -26,5 +26,8 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 
+# SQLite databases (auto-created at runtime)
+*.db
+
 # Claude Code session data
 .claude/

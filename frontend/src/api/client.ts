@@ -24,8 +24,30 @@ export const api = {
     return req<AlertsResponse>(`/wazuh/alerts?${q}`);
   },
   wazuhNoisyRules: (hours_back = 24) => req<NoisyRule[]>(`/wazuh/noisy-rules?hours_back=${hours_back}`),
+  wazuhRuleBreakdown: (rule_id: string, hours_back = 24) =>
+    req<RuleBreakdown>(`/wazuh/rule-breakdown?rule_id=${encodeURIComponent(rule_id)}&hours_back=${hours_back}`),
+  wazuhRuleDimensionDetail: (rule_id: string, field: string, value: string, hours_back = 24) =>
+    req<DimensionDetail>(`/wazuh/rule-dimension-detail?rule_id=${encodeURIComponent(rule_id)}&field=${encodeURIComponent(field)}&value=${encodeURIComponent(value)}&hours_back=${hours_back}`),
+  wazuhRuleDetail: (rule_id: string) =>
+    req<WazuhRuleDetail>(`/wazuh/rule-detail?rule_id=${encodeURIComponent(rule_id)}`),
+  wazuhRuleTrend: (rule_id: string) =>
+    req<RuleTrend>(`/wazuh/rule-trend?rule_id=${encodeURIComponent(rule_id)}`),
   wazuhAgentAlertSummary: (hours_back = 24) => req<AgentAlertSummary[]>(`/wazuh/agent-alert-summary?hours_back=${hours_back}`),
   wazuhAgents: () => req<WazuhAgent[]>("/wazuh/agents"),
+  wazuhRestartAgent: (agentId: string) => req(`/wazuh/agents/${encodeURIComponent(agentId)}/restart`, { method: "POST" }),
+  suppressionLog: () => req<SuppressionLogEntry[]>("/wazuh/suppression-log"),
+  addSuppressionLog: (e: NewSuppressionLog) => req<SuppressionLogEntry>("/wazuh/suppression-log", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(e),
+  }),
+  changelog: () => req<SuppressionLogEntry[]>("/changelog"),
+  addChangelogEntry: (e: NewSuppressionLog) => req<SuppressionLogEntry>("/changelog", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(e),
+  }),
+  config: () => req<{ ninja_web_url: string }>("/config"),
   wazuhAlertVolume: (timeframe: string) =>
     req<AlertBucket[]>(`/wazuh/alert-volume?timeframe=${timeframe}`),
   refreshWazuh: () => req("/wazuh/refresh", { method: "POST" }),
@@ -158,6 +180,71 @@ export interface AgentAlertSummary {
   } | null;
 }
 
+export interface RuleBreakdownBucket { value: string; count: number; }
+
+export interface AlertSample {
+  timestamp?:                   string;
+  agent_name?:                  string;
+  decoder?:                     string;
+  location?:                    string;
+  // FIM / syscheck fields
+  syscheck_path?:               string;
+  syscheck_event?:              string;
+  syscheck_value_name?:         string;
+  syscheck_value_type?:         string;
+  syscheck_changed_attributes?: string[] | string;
+  syscheck_content_changes?:    string;
+  syscheck_sha1_before?:        string;
+  syscheck_sha1_after?:         string;
+  syscheck_size_before?:        string | number;
+  syscheck_size_after?:         string | number;
+  syscheck_mtime_after?:        string | number;
+  syscheck_uname_after?:        string;
+  syscheck_perm_after?:         string;
+  // Windows event fields
+  event_id?:       string;
+  channel?:        string;
+  message?:        string;
+  provider?:       string;
+  user?:           string;
+  tgt_user?:       string;
+  src_ip?:         string;
+  srcuser?:        string;
+}
+
+export interface DimensionDetail {
+  total:                  number;
+  by_agent:               RuleBreakdownBucket[];
+  by_syscheck_event:      RuleBreakdownBucket[];
+  by_syscheck_path:       RuleBreakdownBucket[];
+  by_value_name:          RuleBreakdownBucket[];
+  by_value_type:          RuleBreakdownBucket[];
+  by_changed_attributes:  RuleBreakdownBucket[];
+  by_user:                RuleBreakdownBucket[];
+  by_event_id:            RuleBreakdownBucket[];
+  by_location:            RuleBreakdownBucket[];
+  hourly:                 { time: string; count: number }[];
+  first_seen?:            string;
+  last_seen?:             string;
+  samples:                AlertSample[];
+}
+
+export interface RuleBreakdown {
+  rule_id:              string;
+  total:                number;
+  top_agents:           RuleBreakdownBucket[];
+  top_event_ids:        RuleBreakdownBucket[];
+  top_users:            RuleBreakdownBucket[];
+  top_src_ips:          RuleBreakdownBucket[];
+  top_syscheck_paths:   RuleBreakdownBucket[];
+  top_syscheck_events:  RuleBreakdownBucket[];
+  top_srcusers:         RuleBreakdownBucket[];
+  top_decoders:         RuleBreakdownBucket[];
+  top_locations:        RuleBreakdownBucket[];
+  hourly_pattern:       { time: string; count: number }[];
+  sample_alerts:        AlertSample[];
+}
+
 export interface NoisyRule {
   rule_id: string;
   description: string;
@@ -165,6 +252,33 @@ export interface NoisyRule {
   severity: string;
   alert_count: number;
   last_triggered: string;
+}
+
+export interface RuleTrend {
+  daily: { date: string; count: number }[];
+  total_7d: number;
+  trend: "up" | "down" | "flat";
+  trend_pct: number;
+  top_processes: { value: string; count: number }[];
+}
+
+export interface WazuhRuleDetail {
+  id: number | string;
+  description: string;
+  level: number;
+  filename: string;
+  if_sid: string;
+  groups: string[];
+  pci_dss: string[];
+  nist_800_53: string[];
+  gdpr: string[];
+  hipaa: string[];
+  tsc: string[];
+  mitre: {
+    id: string[];
+    technique: string[];
+    tactic: string[];
+  };
 }
 
 export interface WazuhAgent {
@@ -232,4 +346,24 @@ export interface NinjaActivity {
 export interface ActivityParams {
   device_id?: string;
   activity_type?: string;
+}
+
+export interface SuppressionLogEntry {
+  id: number;
+  created_at: string;
+  rule_id: string;
+  description: string;
+  alert_count: number;
+  reduction_pct: number | null;
+  notes: string | null;
+  total_alerts: number | null;
+}
+
+export interface NewSuppressionLog {
+  rule_id: string;
+  description: string;
+  alert_count: number;
+  reduction_pct?: number;
+  notes?: string;
+  total_alerts?: number;
 }

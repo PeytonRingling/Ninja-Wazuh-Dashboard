@@ -8,10 +8,10 @@ interface Props {
 }
 
 const SEV_COLORS: Record<string, string> = {
-  critical: "#ef4444",
-  high: "#f97316",
-  medium: "#eab308",
-  low: "#22c55e",
+  critical: "#ff2d6d",
+  high: "#ff6b35",
+  medium: "#fbbf24",
+  low: "#34d399",
 };
 
 export default function SeverityDonut({ data, selectedSeverity, onSeveritySelect }: Props) {
