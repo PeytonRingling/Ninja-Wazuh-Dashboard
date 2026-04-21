@@ -125,6 +125,22 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ current_password, new_password }),
     }),
+
+  // Self-service invite flow
+  sendInviteLink: (email: string, role: string, dashboard_url: string) =>
+    req<{ ok: boolean }>("/auth/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, role, dashboard_url }),
+    }),
+  validateSetupToken: (token: string) =>
+    req<{ email: string; role: string }>(`/auth/setup?token=${encodeURIComponent(token)}`),
+  completeSetup: (token: string, username: string, password: string) =>
+    req<{ token: string; username: string; role: string }>("/auth/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, username, password }),
+    }),
 };
 
 // Types

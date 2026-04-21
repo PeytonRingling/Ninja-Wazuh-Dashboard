@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { api, Summary } from "./api/client";
 import { useAuth } from "./contexts/AuthContext";
 import LoginPage from "./components/LoginPage";
+import InviteSetupPage from "./components/InviteSetupPage";
 import TopBar from "./components/TopBar";
 import HomeTab from "./components/home/HomeTab";
 import WazuhTab from "./components/wazuh/WazuhTab";
@@ -31,6 +32,10 @@ export interface WazuhNavOptions {
 }
 
 export default function App() {
+  // Handle invite setup links — show setup page before any auth check
+  const inviteToken = new URLSearchParams(window.location.search).get("invite");
+  if (inviteToken) return <InviteSetupPage token={inviteToken} />;
+
   const { user, loading: authLoading } = useAuth();
 
   if (authLoading) {

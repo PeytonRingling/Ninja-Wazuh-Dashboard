@@ -181,7 +181,7 @@ app.add_middleware(
 )
 
 # ── Auth middleware — protects all /api/* except /api/auth/login ───────────────
-_PUBLIC_PATHS = {"/api/auth/login"}
+_PUBLIC_PATHS = {"/api/auth/login", "/api/auth/setup"}
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):

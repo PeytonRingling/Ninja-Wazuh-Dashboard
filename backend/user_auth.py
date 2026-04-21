@@ -13,6 +13,7 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 
 import db as db_module
+import email_client
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 # Set JWT_SECRET in .env to keep sessions alive across restarts.
@@ -85,6 +86,16 @@ class ChangeOwnPasswordRequest(BaseModel):
     current_password: str
     new_password: str
 
+class SendInviteRequest(BaseModel):
+    email: str
+    role: str = "viewer"
+    dashboard_url: str = ""
+
+class CompleteSetupRequest(BaseModel):
+    token: str
+    username: str
+    password: str
+
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
@@ -150,3 +161,53 @@ async def change_own_password(
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     db_module.update_password(user["username"], hash_password(body.new_password))
     return {"ok": True}
+
+
+# ── Self-service invite flow ────────────────────────────────────────────────────
+
+@router.post("/invite")
+async def send_invite(body: SendInviteRequest, _: dict = Depends(require_admin)):
+    """Admin-only: create a signup link and email it to the recipient."""
+    from datetime import timedelta
+    if body.role not in ("admin", "viewer"):
+        raise HTTPException(status_code=400, detail="Role must be 'admin' or 'viewer'")
+    inv_token   = secrets.token_urlsafe(32)
+    expires_at  = (
+        datetime.now(timezone.utc) + timedelta(hours=72)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    db_module.create_invitation(inv_token, body.email, body.role, expires_at)
+    base_url    = body.dashboard_url.rstrip("/") or "https://security.mes.suntado.com"
+    setup_url   = f"{base_url}?invite={inv_token}"
+    try:
+        email_client.send_invite_link(body.email, setup_url, body.role)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@router.get("/setup")
+async def validate_invite_token(token: str):
+    """Public: validate an invite token and return the email/role it was issued for."""
+    inv = db_module.get_invitation(token)
+    if not inv:
+        raise HTTPException(status_code=400, detail="Invalid or expired invite link")
+    return {"email": inv["email"], "role": inv["role"]}
+
+
+@router.post("/setup")
+async def complete_setup(body: CompleteSetupRequest):
+    """Public: exchange a valid invite token for a new user account + JWT."""
+    inv = db_module.get_invitation(body.token)
+    if not inv:
+        raise HTTPException(status_code=400, detail="Invalid or expired invite link")
+    if db_module.get_user(body.username):
+        raise HTTPException(status_code=409, detail="Username already taken — please choose another")
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    db_module.create_user(body.username, hash_password(body.password), inv["role"])
+    db_module.use_invitation(body.token)
+    return {
+        "token":    create_token(body.username),
+        "username": body.username,
+        "role":     inv["role"],
+    }

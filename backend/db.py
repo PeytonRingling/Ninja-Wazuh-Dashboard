@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 # DB_PATH env var lets Docker (or any deployment) put the DB wherever it needs to be.
@@ -104,6 +105,17 @@ def init_db() -> None:
                 key        TEXT PRIMARY KEY,
                 value      TEXT NOT NULL,
                 updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS invitations (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                token      TEXT    UNIQUE NOT NULL,
+                email      TEXT    NOT NULL,
+                role       TEXT    NOT NULL DEFAULT 'viewer',
+                created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                expires_at TEXT    NOT NULL,
+                used       INTEGER NOT NULL DEFAULT 0
             )
         """)
         c.commit()
@@ -240,4 +252,33 @@ def update_password(username: str, password_hash: str) -> None:
             "UPDATE users SET password_hash = ? WHERE username = ?",
             (password_hash, username),
         )
+        c.commit()
+
+
+# ── Invitations ───────────────────────────────────────────────────────────────
+
+def create_invitation(token: str, email: str, role: str, expires_at: str) -> dict:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO invitations (token, email, role, expires_at) VALUES (?, ?, ?, ?)",
+            (token, email, role, expires_at),
+        )
+        c.commit()
+        row = c.execute("SELECT * FROM invitations WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+
+def get_invitation(token: str) -> dict | None:
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with _conn() as c:
+        row = c.execute(
+            "SELECT * FROM invitations WHERE token = ? AND used = 0 AND expires_at > ?",
+            (token, now),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def use_invitation(token: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE invitations SET used = 1 WHERE token = ?", (token,))
         c.commit()

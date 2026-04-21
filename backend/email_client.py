@@ -27,6 +27,8 @@ def _get_smtp_settings() -> dict:
 def send_email(to: str, subject: str, html: str, text: str = "") -> None:
     """Send an email. Raises on failure."""
     cfg = _get_smtp_settings()
+    if not cfg["enabled"]:
+        raise ValueError("SMTP is not enabled. Turn it on in Settings → Email.")
     if not cfg["host"] or not cfg["from_email"]:
         raise ValueError("SMTP is not configured. Set host and from address in Settings.")
 
@@ -96,6 +98,50 @@ def send_invite(to: str, username: str, temp_password: str, dashboard_url: str) 
         f"Username: {username}\n"
         f"Password: {temp_password}\n\n"
         f"Please change your password after your first login."
+    )
+    send_email(to, subject, html, text)
+
+
+def send_invite_link(to: str, setup_url: str, role: str) -> None:
+    """Send a self-service account-setup link to a new user."""
+    role_display = role.capitalize()
+    subject = "You've been invited to OPS Dashboard"
+    html = f"""<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#0d0d1a;font-family:system-ui,sans-serif;">
+  <div style="max-width:480px;margin:40px auto;background:#13132b;border:1px solid #2d2b55;border-radius:16px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#4c1d95,#2d1b69);padding:32px;text-align:center;">
+      <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">OPS Dashboard</h1>
+      <p style="margin:8px 0 0;color:#c4b5fd;font-size:14px;">You've been invited</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="color:#e2e8f0;font-size:15px;margin:0 0 8px;">
+        You've been invited to join as a
+        <strong style="color:#a78bfa">&nbsp;{role_display}</strong>.
+      </p>
+      <p style="color:#94a3b8;font-size:13px;margin:0 0 28px;">
+        Click the button below to choose your own username and set your password.
+        The link expires in <strong style="color:#e2e8f0">72 hours</strong>.
+      </p>
+      <div style="text-align:center;margin-bottom:28px;">
+        <a href="{setup_url}"
+           style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#7c3aed,#a855f7);
+                  color:#fff;text-decoration:none;border-radius:10px;font-weight:700;font-size:15px;
+                  box-shadow:0 0 24px rgba(124,58,237,0.4);">
+          Set Up My Account
+        </a>
+      </div>
+      <p style="color:#64748b;font-size:11px;margin:0;line-height:1.6;">
+        Or copy this link into your browser:<br>
+        <span style="color:#a78bfa;font-family:monospace;word-break:break-all;">{setup_url}</span>
+      </p>
+    </div>
+  </div>
+</body>
+</html>"""
+    text = (
+        f"You've been invited to OPS Dashboard as a {role_display}.\n\n"
+        f"Set up your account (link expires in 72 hours):\n{setup_url}\n"
     )
     send_email(to, subject, html, text)
 

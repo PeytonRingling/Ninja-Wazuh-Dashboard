@@ -618,12 +618,10 @@ function UsersTab({ currentUser, onLogout, onClose }: {
   const isAdmin = currentUser?.role === "admin";
   const [users, setUsers]               = useState<UserAccount[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [newUsername, setNewUsername]   = useState("");
-  const [newPassword, setNewPassword]   = useState("");
-  const [newRole, setNewRole]           = useState<"viewer" | "admin">("viewer");
-  const [newEmail, setNewEmail]         = useState("");
-  const [creating, setCreating]         = useState(false);
-  const [createError, setCreateError]   = useState<string | null>(null);
+  const [inviteToEmail, setInviteToEmail] = useState("");
+  const [inviteToRole, setInviteToRole]   = useState<"viewer" | "admin">("viewer");
+  const [sendingInvite, setSendingInvite] = useState(false);
+  const [inviteSendMsg, setInviteSendMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [resetTarget, setResetTarget]   = useState<string | null>(null);
   const [resetPw, setResetPw]           = useState("");
   const [resetting, setResetting]       = useState(false);
@@ -787,49 +785,52 @@ function UsersTab({ currentUser, onLogout, onClose }: {
               </div>
             )}
 
-            {/* Add user */}
+            {/* Send invite */}
             <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Add User</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Invite New User</p>
+              <p className="text-[11px] text-slate-600 mb-3">
+                An email is sent with a link. The recipient chooses their own username and password.
+              </p>
               <div className="grid grid-cols-2 gap-3 mb-3">
-                <div>
-                  <label className="block text-[10px] text-slate-500 mb-1">Username</label>
-                  <input className={inputCls} style={{ color: "#f1f5f9" }} value={newUsername}
-                    onChange={e => setNewUsername(e.target.value)} placeholder="username" autoComplete="off" />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-slate-500 mb-1">Password</label>
-                  <input type="password" className={inputCls} style={{ color: "#f1f5f9" }} value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)} placeholder="min 8 chars" autoComplete="new-password" />
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-[10px] text-slate-500 mb-1">Email address</label>
+                  <input type="email" className={inputCls} style={{ color: "#f1f5f9" }} value={inviteToEmail}
+                    onChange={e => setInviteToEmail(e.target.value)} placeholder="user@example.com" autoComplete="off" />
                 </div>
                 <div>
                   <label className="block text-[10px] text-slate-500 mb-1">Role</label>
-                  <select className={inputCls} value={newRole} onChange={e => setNewRole(e.target.value as "viewer" | "admin")}
-                    style={{ background: "#0d0d1a", color: "#f1f5f9" }}>
+                  <select className={inputCls} value={inviteToRole}
+                    onChange={e => setInviteToRole(e.target.value as "viewer" | "admin")}
+                    style={{ background: "var(--body-bg)", color: "#f1f5f9" }}>
                     <option value="viewer">Viewer</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-[10px] text-slate-500 mb-1">Invite email (optional)</label>
-                  <input type="email" className={inputCls} style={{ color: "#f1f5f9" }} value={newEmail}
-                    onChange={e => setNewEmail(e.target.value)} placeholder="user@example.com" autoComplete="off" />
-                </div>
               </div>
-              <button onClick={async () => {
-                setCreateError(null);
-                if (!newUsername.trim() || !newPassword.trim()) { setCreateError("Username and password are required"); return; }
-                setCreating(true);
-                try {
-                  await api.authCreateUser({ username: newUsername.trim(), password: newPassword, role: newRole });
-                  if (newEmail.trim()) await api.sendInviteEmail(newUsername.trim(), newEmail.trim(), newPassword).catch(() => {});
-                  setNewUsername(""); setNewPassword(""); setNewRole("viewer"); setNewEmail("");
-                  loadUsers();
-                } catch (e) { setCreateError(e instanceof Error ? e.message.replace(/^\d+: /, "") : "Failed"); }
-                finally { setCreating(false); }
-              }} disabled={creating} className="btn-primary px-4 py-2 text-sm font-semibold disabled:opacity-50">
-                {creating ? "Adding…" : "Add User"}
+              <button
+                onClick={async () => {
+                  setInviteSendMsg(null);
+                  if (!inviteToEmail.trim()) return;
+                  setSendingInvite(true);
+                  try {
+                    await api.sendInviteLink(inviteToEmail.trim(), inviteToRole, window.location.origin);
+                    setInviteSendMsg({ type: "ok", text: `Invite sent to ${inviteToEmail}` });
+                    setInviteToEmail("");
+                    setInviteToRole("viewer");
+                  } catch (e) {
+                    setInviteSendMsg({ type: "err", text: e instanceof Error ? e.message.replace(/^\d+: /, "") : "Failed to send" });
+                  } finally { setSendingInvite(false); }
+                }}
+                disabled={sendingInvite || !inviteToEmail.trim()}
+                className="btn-primary px-4 py-2 text-sm font-semibold disabled:opacity-50"
+              >
+                {sendingInvite ? "Sending…" : "Send Invite"}
               </button>
-              {createError && <p className="text-xs text-red-400 mt-2">{createError}</p>}
+              {inviteSendMsg && (
+                <p className={`text-xs mt-2 ${inviteSendMsg.type === "ok" ? "text-green-400" : "text-red-400"}`}>
+                  {inviteSendMsg.text}
+                </p>
+              )}
             </div>
           </Section>
         </>
