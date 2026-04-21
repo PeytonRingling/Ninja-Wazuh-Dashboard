@@ -7,15 +7,15 @@ import HomeTab from "./components/home/HomeTab";
 import WazuhTab from "./components/wazuh/WazuhTab";
 import NinjaTab from "./components/ninja/NinjaTab";
 import EndpointIntelTab from "./components/endpoint/EndpointIntelTab";
-import SettingsTab from "./components/settings/SettingsTab";
+import SettingsDrawer from "./components/settings/SettingsDrawer";
 import GuideTab from "./components/guide/GuideTab";
 import ThreatIntelTab from "./components/threat-intel/ThreatIntelTab";
 import GlobalSearch from "./components/GlobalSearch";
 import FloatingHelp from "./components/FloatingHelp";
 
-type Tab = "home" | "wazuh" | "ninja" | "endpoint" | "threat" | "guide" | "settings";
+type Tab = "home" | "wazuh" | "ninja" | "endpoint" | "threat" | "guide";
 
-const VALID_TABS: Tab[] = ["home", "wazuh", "ninja", "endpoint", "threat", "guide", "settings"];
+const VALID_TABS: Tab[] = ["home", "wazuh", "ninja", "endpoint", "threat", "guide"];
 
 function tabFromHash(): Tab {
   const h = window.location.hash.slice(1) as Tab;
@@ -45,6 +45,7 @@ export default function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [severityFilter, setSeverityFilter] = useState<string>("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [wazuhNav, setWazuhNav] = useState<WazuhNavOptions>({});
   const [ninjaDeviceSearch, setNinjaDeviceSearch] = useState("");
   const [patchFocusDeviceId, setPatchFocusDeviceId] = useState<number | null>(null);
@@ -131,7 +132,7 @@ export default function App() {
         case "e": case "E": navigate("endpoint"); break;
         case "t": case "T": navigate("threat");    break;
         case "g": case "G": navigate("guide");    break;
-        case "s": case "S": navigate("settings"); break;
+        case "s": case "S": setSettingsOpen(o => !o); break;
         case "r": case "R": fetchSummary();       break;
         case "d": case "D": setIsDark(d => !d);  break;
       }
@@ -159,7 +160,7 @@ export default function App() {
         onSeverityClick={(sev) => { navigate("wazuh"); setSeverityFilter(sev); }}
         isDark={isDark}
         onThemeToggle={() => setIsDark(d => !d)}
-        onSettingsClick={() => navigate("settings")}
+        onSettingsClick={() => setSettingsOpen(true)}
       />
 
       {/* Tab Navigation */}
@@ -184,7 +185,6 @@ export default function App() {
               { key: "wazuh",    label: "Wazuh SIEM" },
               { key: "ninja",    label: "NinjaOne RMM" },
               { key: "guide",    label: "Guide" },
-              { key: "settings", label: "Settings" },
             ] as { key: Tab; label: string }[]).map(({ key, label }) => (
               <button
                 key={key}
@@ -247,8 +247,8 @@ export default function App() {
           />
         )}
         {tab === "guide"    && <GuideTab />}
-        {tab === "settings" && <SettingsTab />}
       </main>
+      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }
