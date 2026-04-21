@@ -252,7 +252,11 @@ export default function App() {
         )}
         {tab === "guide"    && <GuideTab />}
       </main>
-      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onThemeChange={(t) => setTheme(t as Theme)}
+      />
     </div>
   );
 }

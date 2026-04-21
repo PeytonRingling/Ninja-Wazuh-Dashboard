@@ -141,7 +141,11 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
 
 // ── Main drawer ────────────────────────────────────────────────────────────────
 
-export default function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function SettingsDrawer({ open, onClose, onThemeChange }: {
+  open: boolean;
+  onClose: () => void;
+  onThemeChange?: (theme: string) => void;
+}) {
   const { user: currentUser, logout } = useAuth();
   const [activeTab, setActiveTab]     = useState<TabId>("general");
   const [original, setOriginal]       = useState<AppSettings | null>(null);
@@ -188,6 +192,9 @@ export default function SettingsDrawer({ open, onClose }: { open: boolean; onClo
       await api.saveSettings(draft);
       setOriginal(draft);
       showToast("ok", "Settings saved.");
+      if (draft.default_theme !== original?.default_theme) {
+        onThemeChange?.(draft.default_theme);
+      }
     } catch (e) {
       showToast("err", e instanceof Error ? e.message : "Failed to save.");
     } finally {
