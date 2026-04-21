@@ -14,10 +14,10 @@ import GlobalSearch from "./components/GlobalSearch";
 import FloatingHelp from "./components/FloatingHelp";
 
 type Tab = "home" | "wazuh" | "ninja" | "endpoint" | "threat" | "guide";
-type Theme = "dark" | "light" | "green" | "slate" | "crimson";
+type Theme = "dark" | "light" | "green" | "slate" | "crimson" | "neon";
 
 const VALID_TABS:   Tab[]   = ["home", "wazuh", "ninja", "endpoint", "threat", "guide"];
-const VALID_THEMES: Theme[] = ["dark", "light", "green", "slate", "crimson"];
+const VALID_THEMES: Theme[] = ["dark", "light", "green", "slate", "crimson", "neon"];
 
 function tabFromHash(): Tab {
   const h = window.location.hash.slice(1) as Tab;
@@ -84,11 +84,12 @@ export default function App() {
   // Theme management
   useEffect(() => {
     const html = document.documentElement;
-    html.classList.remove("dark", "theme-green", "theme-slate", "theme-crimson");
+    html.classList.remove("dark", "theme-green", "theme-slate", "theme-crimson", "theme-neon");
     if (theme !== "light") html.classList.add("dark");
     if (theme === "green")   html.classList.add("theme-green");
     if (theme === "slate")   html.classList.add("theme-slate");
     if (theme === "crimson") html.classList.add("theme-crimson");
+    if (theme === "neon")    html.classList.add("theme-neon");
     localStorage.setItem("theme", theme);
   }, [theme]);
 

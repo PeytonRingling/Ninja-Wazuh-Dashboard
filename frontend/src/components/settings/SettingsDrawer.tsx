@@ -338,6 +338,7 @@ function GeneralTab({ draft, patch }: { draft: AppSettings; patch: <K extends ke
               <option value="green">Terminal Green</option>
               <option value="slate">Slate Night</option>
               <option value="crimson">Crimson</option>
+              <option value="neon">Neon</option>
               <option value="light">Light</option>
             </select>
           </div>
