@@ -484,6 +484,14 @@ export interface AppSettings {
   smtp_from_email: string;
   smtp_from_name: string;
   smtp_tls: boolean;
+  // Email alert notifications
+  email_alerts_enabled: boolean;
+  email_alert_to: string;
+  email_notify_critical: boolean;
+  email_notify_high: boolean;
+  email_notify_medium: boolean;
+  email_notify_low: boolean;
+  email_cooldown_minutes: number;
   // Informational — from environment, not persisted
   wazuh_url_display: string;
   wazuh_username_display: string;

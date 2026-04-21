@@ -537,6 +537,42 @@ function EmailTab({ draft, patch }: { draft: AppSettings; patch: <K extends keyo
         <Toggle label="Use STARTTLS" description="Recommended for port 587. Disable for port 465 (SSL)." checked={draft.smtp_tls} onChange={v => patch("smtp_tls", v)} />
       </Section>
       <Divider />
+      <Section title="Alert Email Notifications"
+        description="Automatically email when Wazuh alert counts increase. SMTP must be enabled above.">
+        <Toggle
+          label="Enable alert email notifications"
+          description="Sends an email when new alerts of the selected severities are detected."
+          checked={draft.email_alerts_enabled}
+          onChange={v => patch("email_alerts_enabled", v)}
+        />
+        <div className={`space-y-3 transition-opacity ${!draft.email_alerts_enabled ? "opacity-40 pointer-events-none" : ""}`}>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1.5">Send alerts to</label>
+            <input
+              type="email"
+              className={inputCls}
+              style={{ color: "#f1f5f9" }}
+              value={draft.email_alert_to}
+              onChange={e => patch("email_alert_to", e.target.value)}
+              placeholder="you@example.com"
+            />
+          </div>
+          <div className="pl-4 border-l-2 border-surface-600 space-y-3">
+            <Toggle label="Critical alerts" checked={draft.email_notify_critical} onChange={v => patch("email_notify_critical", v)} />
+            <Toggle label="High alerts"     checked={draft.email_notify_high}     onChange={v => patch("email_notify_high",     v)} />
+            <Toggle label="Medium alerts"   checked={draft.email_notify_medium}   onChange={v => patch("email_notify_medium",   v)} />
+            <Toggle label="Low alerts"      checked={draft.email_notify_low}      onChange={v => patch("email_notify_low",      v)} />
+            <NumberField
+              label="Cooldown between emails"
+              description="Won't send another email until this much time has passed, even if more alerts arrive."
+              value={draft.email_cooldown_minutes}
+              onChange={v => patch("email_cooldown_minutes", v)}
+              min={1} max={1440} unit="minutes"
+            />
+          </div>
+        </div>
+      </Section>
+      <Divider />
       <Section title="Send Test Email" description="Save your settings first, then send a test to verify everything works.">
         <div className="flex gap-2">
           <input type="email" className={inputCls} style={{ color: "#f1f5f9" }} value={testTo}

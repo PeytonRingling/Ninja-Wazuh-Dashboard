@@ -45,6 +45,64 @@ logger = logging.getLogger(__name__)
 wazuh: WazuhClient = None
 ninja: NinjaClient = None
 
+# ── Alert email watcher ────────────────────────────────────────────────────────
+
+_prev_alert_counts: dict | None = None
+_last_alert_email_ts: float = 0.0
+
+
+async def _alert_email_watcher() -> None:
+    """Background task: email when Wazuh alert counts increase."""
+    global _prev_alert_counts, _last_alert_email_ts
+    await asyncio.sleep(90)          # initial delay so startup can settle
+    while True:
+        try:
+            raw = db_module.get_settings_raw()
+            if raw.get("email_alerts_enabled") != "true" or raw.get("smtp_enabled") != "true":
+                await asyncio.sleep(60)
+                continue
+
+            alert_to = raw.get("email_alert_to", "").strip()
+            if not alert_to:
+                await asyncio.sleep(60)
+                continue
+
+            summary = await wazuh.get_summary()
+            current = {
+                "critical": summary.get("critical", 0),
+                "high":     summary.get("high",     0),
+                "medium":   summary.get("medium",   0),
+                "low":      summary.get("low",      0),
+            }
+
+            if _prev_alert_counts is None:
+                _prev_alert_counts = current
+                await asyncio.sleep(60)
+                continue
+
+            # Determine which severities increased and are watched
+            triggered = any(
+                raw.get(f"email_notify_{sev}") == "true"
+                and current[sev] > _prev_alert_counts.get(sev, 0)
+                for sev in ("critical", "high", "medium", "low")
+            )
+
+            _prev_alert_counts = current
+
+            if triggered:
+                cooldown = int(raw.get("email_cooldown_minutes", "15")) * 60
+                if time.time() - _last_alert_email_ts >= cooldown:
+                    email_client.send_alert_notification(alert_to, current)
+                    _last_alert_email_ts = time.time()
+                    logger.info(f"Alert notification email sent to {alert_to}")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"Alert email watcher error: {e}")
+
+        await asyncio.sleep(60)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -101,7 +159,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"NinjaOne initial auth failed: {e}")
 
+    # Start background alert email watcher
+    task = asyncio.create_task(_alert_email_watcher())
+
     yield
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="IT Operations Dashboard", lifespan=lifespan)
@@ -426,6 +493,14 @@ async def api_get_settings():
         "smtp_from_email":        raw.get("smtp_from_email", ""),
         "smtp_from_name":         raw.get("smtp_from_name", "OPS Dashboard"),
         "smtp_tls":               raw.get("smtp_tls", "true") == "true",
+        # Email alert notifications
+        "email_alerts_enabled":   raw.get("email_alerts_enabled",  "false") == "true",
+        "email_alert_to":         raw.get("email_alert_to",        ""),
+        "email_notify_critical":  raw.get("email_notify_critical", "true")  == "true",
+        "email_notify_high":      raw.get("email_notify_high",     "true")  == "true",
+        "email_notify_medium":    raw.get("email_notify_medium",   "false") == "true",
+        "email_notify_low":       raw.get("email_notify_low",      "false") == "true",
+        "email_cooldown_minutes": int(raw.get("email_cooldown_minutes", "15")),
         # From environment (informational, never persisted to DB)
         "wazuh_url_display":      os.getenv("WAZUH_URL", ""),
         "wazuh_username_display": os.getenv("WAZUH_USERNAME", ""),
@@ -464,6 +539,13 @@ class SettingsIn(BaseModel):
     smtp_from_email:        Optional[str]   = None
     smtp_from_name:         Optional[str]   = None
     smtp_tls:               Optional[bool]  = None
+    email_alerts_enabled:   Optional[bool]  = None
+    email_alert_to:         Optional[str]   = None
+    email_notify_critical:  Optional[bool]  = None
+    email_notify_high:      Optional[bool]  = None
+    email_notify_medium:    Optional[bool]  = None
+    email_notify_low:       Optional[bool]  = None
+    email_cooldown_minutes: Optional[int]   = None
 
 
 @app.post("/api/settings")
@@ -478,8 +560,11 @@ async def api_save_settings(body: SettingsIn):
     strs  = ["default_theme", "default_time_window",
              "smtp_host", "smtp_username", "smtp_password",
              "smtp_from_email", "smtp_from_name"]
-    bools += ["smtp_enabled", "smtp_tls"]
-    ints  += ["smtp_port"]
+    bools += ["smtp_enabled", "smtp_tls",
+              "email_alerts_enabled", "email_notify_critical",
+              "email_notify_high", "email_notify_medium", "email_notify_low"]
+    ints  += ["smtp_port", "email_cooldown_minutes"]
+    strs  += ["email_alert_to"]
 
     for f in bools:
         v = getattr(body, f)

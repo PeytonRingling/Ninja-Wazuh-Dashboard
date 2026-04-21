@@ -100,6 +100,58 @@ def send_invite(to: str, username: str, temp_password: str, dashboard_url: str) 
     send_email(to, subject, html, text)
 
 
+def send_alert_notification(to: str, counts: dict) -> None:
+    """
+    Send an alert count digest email.
+    counts = {"critical": N, "high": N, "medium": N, "low": N}
+    """
+    _SEV = [
+        ("Critical", "critical", "#ff2d6d", "🔴"),
+        ("High",     "high",     "#f97316", "🟠"),
+        ("Medium",   "medium",   "#facc15", "🟡"),
+        ("Low",      "low",      "#94a3b8", "🔵"),
+    ]
+    rows_html = ""
+    rows_text = ""
+    for label, key, color, emoji in _SEV:
+        n = counts.get(key, 0)
+        if n:
+            rows_html += (
+                f'<tr>'
+                f'<td style="padding:8px 16px;color:{color};font-weight:700;">{emoji} {label}</td>'
+                f'<td style="padding:8px 16px;color:#f1f5f9;font-size:20px;font-weight:700;">{n}</td>'
+                f'</tr>'
+            )
+            rows_text += f"  {emoji} {label}: {n}\n"
+
+    total = sum(counts.get(k, 0) for _, k, _, _ in _SEV)
+    subject = f"⚠️ OPS Dashboard — {total} Alert{'s' if total != 1 else ''} Detected"
+
+    html = f"""<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#0d0d1a;font-family:system-ui,sans-serif;">
+  <div style="max-width:480px;margin:40px auto;background:#13132b;border:1px solid #2d2b55;border-radius:16px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#4c1d95,#2d1b69);padding:28px 32px;">
+      <h1 style="margin:0;color:#fff;font-size:20px;font-weight:700;">⚠️ Alert Notification</h1>
+      <p style="margin:6px 0 0;color:#c4b5fd;font-size:13px;">OPS Dashboard detected new alerts</p>
+    </div>
+    <div style="padding:24px 32px;">
+      <p style="color:#94a3b8;font-size:13px;margin:0 0 20px;">Current alert counts as of this check:</p>
+      <table style="width:100%;border-collapse:collapse;background:#0d0d1a;border-radius:10px;overflow:hidden;border:1px solid #2d2b55;">
+        {rows_html}
+      </table>
+      <p style="color:#64748b;font-size:11px;margin:20px 0 0;">
+        To stop these emails, disable Alert Email Notifications in Settings → Email.
+      </p>
+    </div>
+  </div>
+</body>
+</html>"""
+
+    text = f"OPS Dashboard — New alerts detected:\n\n{rows_text}\nOpen your dashboard to review."
+    send_email(to, subject, html, text)
+
+
 def send_test_email(to: str) -> None:
     subject = "OPS Dashboard — SMTP test"
     html = """

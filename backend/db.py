@@ -53,6 +53,14 @@ SETTINGS_DEFAULTS: dict[str, str] = {
     "smtp_from_email":        "",
     "smtp_from_name":         "OPS Dashboard",
     "smtp_tls":               "true",
+    # Email alert notifications
+    "email_alerts_enabled":   "false",
+    "email_alert_to":         "",
+    "email_notify_critical":  "true",
+    "email_notify_high":      "true",
+    "email_notify_medium":    "false",
+    "email_notify_low":       "false",
+    "email_cooldown_minutes": "15",
 }
 
 
