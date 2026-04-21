@@ -205,11 +205,11 @@ export default function SettingsDrawer({ open, onClose }: { open: boolean; onClo
       {/* Panel */}
       <div
         className="relative flex flex-col h-full w-full max-w-2xl shadow-2xl"
-        style={{ background: "#0d0d1a", borderLeft: "1px solid #2d2b55" }}
+        style={{ background: "var(--body-bg)", borderLeft: "1px solid var(--card-border)" }}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 shrink-0"
-          style={{ borderBottom: "1px solid #2d2b55" }}>
+          style={{ borderBottom: "1px solid var(--card-border)" }}>
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center"
               style={{ background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.3)" }}>
@@ -232,7 +232,7 @@ export default function SettingsDrawer({ open, onClose }: { open: boolean; onClo
         </div>
 
         {/* Tab bar */}
-        <div className="flex shrink-0 overflow-x-auto" style={{ borderBottom: "1px solid #2d2b55", background: "#0a0a18" }}>
+        <div className="flex shrink-0 overflow-x-auto" style={{ borderBottom: "1px solid var(--card-border)", background: "var(--body-bg)" }}>
           {TABS.map(tab => (
             <button
               key={tab.id}
@@ -274,7 +274,7 @@ export default function SettingsDrawer({ open, onClose }: { open: boolean; onClo
         {/* Save bar */}
         {isDirty && (
           <div className="shrink-0 flex items-center justify-between gap-4 px-6 py-4"
-            style={{ borderTop: "1px solid #2d2b55", background: "#0a0a18" }}>
+            style={{ borderTop: "1px solid var(--card-border)", background: "var(--body-bg)" }}>
             <span className="text-xs text-slate-500">Unsaved changes</span>
             <div className="flex gap-3">
               <button
@@ -327,7 +327,10 @@ function GeneralTab({ draft, patch }: { draft: AppSettings; patch: <K extends ke
             <select value={draft.default_theme} onChange={e => patch("default_theme", e.target.value)}
               className="w-full px-3 py-2 rounded-lg text-sm bg-surface-800 border border-surface-600 text-slate-200 focus:outline-none focus:border-accent/60"
               style={{ background: "#0d0d1a" }}>
-              <option value="dark">Dark (Midnight Purple)</option>
+              <option value="dark">Midnight Purple</option>
+              <option value="green">Terminal Green</option>
+              <option value="slate">Slate Night</option>
+              <option value="crimson">Crimson</option>
               <option value="light">Light</option>
             </select>
           </div>
@@ -689,7 +692,7 @@ function UsersTab({ currentUser, onLogout, onClose }: {
             <div className="rounded-lg overflow-hidden border border-surface-700">
               <table className="w-full text-sm">
                 <thead>
-                  <tr style={{ background: "rgba(13,13,26,0.6)", borderBottom: "1px solid #2d2b55" }}>
+                  <tr style={{ background: "rgba(13,13,26,0.6)", borderBottom: "1px solid var(--card-border)" }}>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Username</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Role</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Created</th>

@@ -14,8 +14,10 @@ import GlobalSearch from "./components/GlobalSearch";
 import FloatingHelp from "./components/FloatingHelp";
 
 type Tab = "home" | "wazuh" | "ninja" | "endpoint" | "threat" | "guide";
+type Theme = "dark" | "light" | "green" | "slate" | "crimson";
 
-const VALID_TABS: Tab[] = ["home", "wazuh", "ninja", "endpoint", "threat", "guide"];
+const VALID_TABS:   Tab[]   = ["home", "wazuh", "ninja", "endpoint", "threat", "guide"];
+const VALID_THEMES: Theme[] = ["dark", "light", "green", "slate", "crimson"];
 
 function tabFromHash(): Tab {
   const h = window.location.hash.slice(1) as Tab;
@@ -49,11 +51,12 @@ export default function App() {
   const [wazuhNav, setWazuhNav] = useState<WazuhNavOptions>({});
   const [ninjaDeviceSearch, setNinjaDeviceSearch] = useState("");
   const [patchFocusDeviceId, setPatchFocusDeviceId] = useState<number | null>(null);
-  const [isDark, setIsDark] = useState(() => {
-    const stored = localStorage.getItem("theme");
-    if (stored) return stored === "dark";
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const [theme, setTheme] = useState<Theme>(() => {
+    const stored = localStorage.getItem("theme") as Theme;
+    if (stored && VALID_THEMES.includes(stored)) return stored;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
+  const isDark = theme !== "light";
   const prevCritical = useRef<number | null>(null);
 
   // History API — push state on tab change, restore on back/forward
@@ -80,13 +83,14 @@ export default function App() {
 
   // Theme management
   useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-    localStorage.setItem("theme", isDark ? "dark" : "light");
-  }, [isDark]);
+    const html = document.documentElement;
+    html.classList.remove("dark", "theme-green", "theme-slate", "theme-crimson");
+    if (theme !== "light") html.classList.add("dark");
+    if (theme === "green")   html.classList.add("theme-green");
+    if (theme === "slate")   html.classList.add("theme-slate");
+    if (theme === "crimson") html.classList.add("theme-crimson");
+    localStorage.setItem("theme", theme);
+  }, [theme]);
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -134,7 +138,7 @@ export default function App() {
         case "g": case "G": navigate("guide");    break;
         case "s": case "S": setSettingsOpen(o => !o); break;
         case "r": case "R": fetchSummary();       break;
-        case "d": case "D": setIsDark(d => !d);  break;
+        case "d": case "D": setTheme(t => t === "light" ? "dark" : "light"); break;
       }
     };
     document.addEventListener("keydown", h);
@@ -159,7 +163,7 @@ export default function App() {
         summaryError={summaryError}
         onSeverityClick={(sev) => { navigate("wazuh"); setSeverityFilter(sev); }}
         isDark={isDark}
-        onThemeToggle={() => setIsDark(d => !d)}
+        onThemeToggle={() => setTheme(t => t === "light" ? "dark" : "light")}
         onSettingsClick={() => setSettingsOpen(true)}
       />
 
@@ -167,8 +171,8 @@ export default function App() {
       <div
         className="sticky top-[60px] z-10"
         style={isDark ? {
-          background:   "#0d0d1a",
-          borderBottom: "1px solid #2d2b55",
+          background:   "var(--body-bg)",
+          borderBottom: "1px solid var(--card-border)",
           boxShadow:    "0 4px 24px rgba(0,0,0,0.5)",
         } : {
           background:   "#ffffff",
@@ -195,8 +199,8 @@ export default function App() {
                     : "border-transparent text-slate-500 hover:text-slate-300"
                 }`}
                 style={tab === key ? {
-                  borderBottomColor: "#7c3aed",
-                  textShadow: isDark ? "0 0 20px rgba(124,58,237,0.55)" : "none",
+                  borderBottomColor: "var(--accent-color, #7c3aed)",
+                  textShadow: isDark ? "0 0 20px var(--accent-glow, rgba(124,58,237,0.55))" : "none",
                 } : {}}
               >
                 {label}

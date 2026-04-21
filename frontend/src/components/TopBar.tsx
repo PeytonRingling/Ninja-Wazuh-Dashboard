@@ -45,12 +45,12 @@ export default function TopBar({ summary, summaryError, onSeverityClick, isDark,
     <header
       className="sticky top-0 z-20"
       style={isDark ? {
-        background:   "#0d0d1a",
-        borderBottom: "1px solid transparent",
-        backgroundImage: "linear-gradient(#0d0d1a, #0d0d1a), linear-gradient(90deg, #7c3aed, #a855f7)",
+        background:       "var(--body-bg)",
+        borderBottom:     "1px solid transparent",
+        backgroundImage:  "linear-gradient(var(--body-bg), var(--body-bg)), linear-gradient(90deg, var(--accent-color, #7c3aed), var(--accent-secondary, #a855f7))",
         backgroundOrigin: "padding-box, border-box",
-        backgroundClip: "padding-box, border-box",
-        boxShadow:    "0 4px 32px rgba(0,0,0,0.6)",
+        backgroundClip:   "padding-box, border-box",
+        boxShadow:        "0 4px 32px rgba(0,0,0,0.6)",
       } : {
         background:   "#ffffff",
         borderBottom: "1px solid #e2e8f0",
