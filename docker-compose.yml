@@ -1,0 +1,11 @@
+services:
+  dashboard:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Persist the SQLite database across container restarts
+      - ./suppression_log.db:/app/suppression_log.db
+    restart: unless-stopped
