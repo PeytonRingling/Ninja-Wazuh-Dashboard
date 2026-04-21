@@ -5,7 +5,12 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      # Tell the app to store the DB inside the named volume
+      DB_PATH: /data/suppression_log.db
     volumes:
-      # Persist the SQLite database across container restarts
-      - ./suppression_log.db:/app/suppression_log.db
+      - db_data:/data
     restart: unless-stopped
+
+volumes:
+  db_data:

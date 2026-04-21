@@ -3,11 +3,14 @@ SQLite persistence for the suppression change log, changelog, and app settings.
 Database file lives at the project root (next to .env).
 """
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / "suppression_log.db"
+# DB_PATH env var lets Docker (or any deployment) put the DB wherever it needs to be.
+# Falls back to the project root for local dev (existing behaviour).
+DB_PATH = Path(os.environ.get("DB_PATH", str(Path(__file__).parent.parent / "suppression_log.db")))
 
 _DEFAULT_CVE_KEYWORDS = json.dumps([
     {"keyword": "Windows",      "enabled": True},
