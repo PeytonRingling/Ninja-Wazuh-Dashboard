@@ -36,6 +36,7 @@ from indexer_client import IndexerClient
 import cache
 import db as db_module
 import user_auth
+import email_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -416,6 +417,15 @@ async def api_get_settings():
         "auto_refresh_interval":  int(raw["auto_refresh_interval"]),
         "noisy_rules_page_size":  int(raw["noisy_rules_page_size"]),
         "alerts_page_size":       int(raw["alerts_page_size"]),
+        # SMTP
+        "smtp_enabled":           raw.get("smtp_enabled", "false") == "true",
+        "smtp_host":              raw.get("smtp_host", ""),
+        "smtp_port":              int(raw.get("smtp_port", "587")),
+        "smtp_username":          raw.get("smtp_username", ""),
+        "smtp_password":          raw.get("smtp_password", ""),
+        "smtp_from_email":        raw.get("smtp_from_email", ""),
+        "smtp_from_name":         raw.get("smtp_from_name", "OPS Dashboard"),
+        "smtp_tls":               raw.get("smtp_tls", "true") == "true",
         # From environment (informational, never persisted to DB)
         "wazuh_url_display":      os.getenv("WAZUH_URL", ""),
         "wazuh_username_display": os.getenv("WAZUH_USERNAME", ""),
@@ -446,6 +456,14 @@ class SettingsIn(BaseModel):
     auto_refresh_interval:  Optional[int]   = None
     noisy_rules_page_size:  Optional[int]   = None
     alerts_page_size:       Optional[int]   = None
+    smtp_enabled:           Optional[bool]  = None
+    smtp_host:              Optional[str]   = None
+    smtp_port:              Optional[int]   = None
+    smtp_username:          Optional[str]   = None
+    smtp_password:          Optional[str]   = None
+    smtp_from_email:        Optional[str]   = None
+    smtp_from_name:         Optional[str]   = None
+    smtp_tls:               Optional[bool]  = None
 
 
 @app.post("/api/settings")
@@ -457,7 +475,11 @@ async def api_save_settings(body: SettingsIn):
              "offline_yellow_hours", "offline_orange_hours", "fleet_green_pct",
              "fleet_amber_pct", "patch_yellow_days", "patch_orange_days",
              "auto_refresh_interval", "noisy_rules_page_size", "alerts_page_size"]
-    strs  = ["default_theme", "default_time_window"]
+    strs  = ["default_theme", "default_time_window",
+             "smtp_host", "smtp_username", "smtp_password",
+             "smtp_from_email", "smtp_from_name"]
+    bools += ["smtp_enabled", "smtp_tls"]
+    ints  += ["smtp_port"]
 
     for f in bools:
         v = getattr(body, f)
@@ -511,6 +533,36 @@ async def test_ninja_connection():
     except Exception as e:
         ms = int((time.time() - t0) * 1000)
         return {"status": "failed", "latency_ms": ms, "error": str(e)}
+
+
+# ── Email ─────────────────────────────────────────────────────────────────────
+
+class TestEmailIn(BaseModel):
+    to: str
+
+class InviteEmailIn(BaseModel):
+    to: str
+    password: str
+    dashboard_url: str = ""
+
+@app.post("/api/email/test")
+async def send_test_email(body: TestEmailIn):
+    try:
+        email_client.send_test_email(body.to)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/auth/users/{username}/invite")
+async def send_invite_email(username: str, body: InviteEmailIn):
+    if not db_module.get_user(username):
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        url = body.dashboard_url or "https://security.mes.suntado.com"
+        email_client.send_invite(body.to, username, body.password, url)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ── Threat Intelligence (NVD CVE Feed) ────────────────────────────────────────

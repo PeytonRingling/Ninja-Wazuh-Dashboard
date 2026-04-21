@@ -455,6 +455,9 @@ export default function SettingsTab() {
         </div>
       </SectionCard>
 
+      {/* ── SMTP ─────────────────────────────────────────────────────────────── */}
+      <SmtpSettings draft={draft} patch={patch} />
+
       {/* ── User Management ─────────────────────────────────────────────────── */}
       <UserManagement currentUser={currentUser} onLogout={logout} />
 
@@ -506,8 +509,13 @@ function UserManagement({
   const [newUsername, setNewUsername]   = useState("");
   const [newPassword, setNewPassword]   = useState("");
   const [newRole, setNewRole]           = useState<"viewer" | "admin">("viewer");
+  const [newEmail, setNewEmail]         = useState("");
   const [creating, setCreating]         = useState(false);
   const [createError, setCreateError]   = useState<string | null>(null);
+  const [inviteTarget, setInviteTarget] = useState<{ username: string; password: string } | null>(null);
+  const [inviteEmail, setInviteEmail]   = useState("");
+  const [inviting, setInviting]         = useState(false);
+  const [inviteMsg, setInviteMsg]       = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [ownCurrent, setOwnCurrent]     = useState("");
   const [ownNew, setOwnNew]             = useState("");
   const [ownNew2, setOwnNew2]           = useState("");
@@ -536,7 +544,10 @@ function UserManagement({
     setCreating(true);
     try {
       await api.authCreateUser({ username: newUsername.trim(), password: newPassword, role: newRole });
-      setNewUsername(""); setNewPassword(""); setNewRole("viewer");
+      if (newEmail.trim()) {
+        await api.sendInviteEmail(newUsername.trim(), newEmail.trim(), newPassword).catch(() => {});
+      }
+      setNewUsername(""); setNewPassword(""); setNewRole("viewer"); setNewEmail("");
       loadUsers();
     } catch (e) {
       setCreateError(e instanceof Error ? e.message.replace(/^\d+: /, "") : "Failed to create user");
@@ -549,6 +560,21 @@ function UserManagement({
     if (!confirm(`Delete user "${username}"?`)) return;
     await api.authDeleteUser(username).catch(() => {});
     loadUsers();
+  };
+
+  const handleSendInvite = async () => {
+    if (!inviteTarget || !inviteEmail.trim()) return;
+    setInviting(true);
+    setInviteMsg(null);
+    try {
+      await api.sendInviteEmail(inviteTarget.username, inviteEmail.trim(), inviteTarget.password);
+      setInviteMsg({ type: "ok", text: `Invite sent to ${inviteEmail}` });
+      setTimeout(() => { setInviteTarget(null); setInviteEmail(""); setInviteMsg(null); }, 2000);
+    } catch (e) {
+      setInviteMsg({ type: "err", text: e instanceof Error ? e.message.replace(/^\d+: /, "") : "Failed to send" });
+    } finally {
+      setInviting(false);
+    }
   };
 
   const handleResetPw = async () => {
@@ -669,6 +695,12 @@ function UserManagement({
                     <td className="px-4 py-2.5 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
+                          onClick={() => { setInviteTarget({ username: u.username, password: "" }); setInviteEmail(""); setInviteMsg(null); }}
+                          className="text-[10px] text-slate-500 hover:text-purple-400 transition-colors"
+                        >
+                          Invite
+                        </button>
+                        <button
                           onClick={() => { setResetTarget(u.username); setResetPw(""); }}
                           className="text-[10px] text-slate-500 hover:text-yellow-400 transition-colors"
                         >
@@ -713,6 +745,44 @@ function UserManagement({
             </div>
           )}
 
+          {/* Invite panel */}
+          {inviteTarget && (
+            <div className="flex flex-col gap-2 p-3 rounded-lg"
+              style={{ background: "rgba(124,58,237,0.06)", border: "1px solid rgba(124,58,237,0.25)" }}>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-purple-400 shrink-0">
+                  Invite <span className="font-mono">{inviteTarget.username}</span>
+                </span>
+                <input
+                  type="email"
+                  placeholder="Recipient email"
+                  className="flex-1 px-3 py-1.5 rounded text-xs text-slate-100 bg-surface-900 border border-surface-600 outline-none focus:border-purple-500"
+                  value={inviteEmail}
+                  onChange={e => setInviteEmail(e.target.value)}
+                />
+                <input
+                  type="password"
+                  placeholder="Their password (for email)"
+                  className="flex-1 px-3 py-1.5 rounded text-xs text-slate-100 bg-surface-900 border border-surface-600 outline-none focus:border-purple-500"
+                  value={inviteTarget.password}
+                  onChange={e => setInviteTarget(t => t ? { ...t, password: e.target.value } : t)}
+                />
+                <button
+                  onClick={handleSendInvite}
+                  disabled={inviting || !inviteEmail || !inviteTarget.password}
+                  className="px-3 py-1.5 rounded text-xs font-semibold text-white disabled:opacity-50 transition-colors"
+                  style={{ background: "#7c3aed" }}
+                >
+                  {inviting ? "…" : "Send"}
+                </button>
+                <button onClick={() => setInviteTarget(null)} className="text-slate-500 hover:text-slate-300 text-xs">Cancel</button>
+              </div>
+              {inviteMsg && (
+                <p className={`text-xs ${inviteMsg.type === "ok" ? "text-green-400" : "text-red-400"}`}>{inviteMsg.text}</p>
+              )}
+            </div>
+          )}
+
           {/* Add user form */}
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Add User</p>
@@ -739,6 +809,13 @@ function UserManagement({
                   <option value="admin">Admin</option>
                 </select>
               </div>
+            </div>
+            <div className="flex flex-wrap gap-2 items-end mt-2">
+              <div className="flex-1 min-w-48">
+                <label className="block text-[10px] text-slate-500 mb-1">Send invite email to (optional)</label>
+                <input type="email" className={inputCls} value={newEmail}
+                  onChange={e => setNewEmail(e.target.value)} placeholder="user@example.com" autoComplete="off" />
+              </div>
               <button
                 onClick={handleCreate}
                 disabled={creating}
@@ -752,5 +829,126 @@ function UserManagement({
         </SectionCard>
       )}
     </div>
+  );
+}
+
+// ── SMTP Settings ──────────────────────────────────────────────────────────────
+
+function SmtpSettings({
+  draft,
+  patch,
+}: {
+  draft: AppSettings | null;
+  patch: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
+}) {
+  const [testEmail, setTestEmail]   = useState("");
+  const [testing, setTesting]       = useState(false);
+  const [testMsg, setTestMsg]       = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  if (!draft) return null;
+
+  const handleTest = async () => {
+    if (!testEmail.trim()) return;
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      await api.sendTestEmail(testEmail.trim());
+      setTestMsg({ type: "ok", text: `Test email sent to ${testEmail}` });
+    } catch (e) {
+      setTestMsg({ type: "err", text: e instanceof Error ? e.message.replace(/^\d+: /, "") : "Failed" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const inputCls = "w-full px-3 py-2 rounded-lg text-sm text-slate-100 outline-none bg-surface-900 border border-surface-600 focus:border-accent transition-colors";
+
+  return (
+    <SectionCard
+      title="SMTP / Email"
+      description="Used for user invites and future alert notifications. Supports any SMTP provider (Gmail, Outlook, Postfix, etc.)"
+    >
+      <Toggle
+        label="Enable SMTP"
+        description="Send invite and alert emails"
+        checked={draft.smtp_enabled}
+        onChange={v => patch("smtp_enabled", v)}
+      />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">SMTP Host</label>
+          <input className={inputCls} value={draft.smtp_host}
+            onChange={e => patch("smtp_host", e.target.value)}
+            placeholder="smtp.gmail.com" />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">Port</label>
+          <input type="number" className={inputCls} value={draft.smtp_port}
+            onChange={e => patch("smtp_port", Number(e.target.value))}
+            placeholder="587" />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">Username</label>
+          <input className={inputCls} value={draft.smtp_username}
+            onChange={e => patch("smtp_username", e.target.value)}
+            placeholder="you@example.com" autoComplete="off" />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">Password</label>
+          <input type="password" className={inputCls} value={draft.smtp_password}
+            onChange={e => patch("smtp_password", e.target.value)}
+            autoComplete="new-password" placeholder="App password or SMTP password" />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">From Address</label>
+          <input type="email" className={inputCls} value={draft.smtp_from_email}
+            onChange={e => patch("smtp_from_email", e.target.value)}
+            placeholder="dashboard@example.com" />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">From Name</label>
+          <input className={inputCls} value={draft.smtp_from_name}
+            onChange={e => patch("smtp_from_name", e.target.value)}
+            placeholder="OPS Dashboard" />
+        </div>
+      </div>
+
+      <Toggle
+        label="Use STARTTLS"
+        description="Recommended for port 587. Disable for port 465 (SSL) or unencrypted."
+        checked={draft.smtp_tls}
+        onChange={v => patch("smtp_tls", v)}
+      />
+
+      {/* Test email */}
+      <div>
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Send Test Email</p>
+        <div className="flex gap-2 items-center">
+          <input
+            type="email"
+            className={inputCls}
+            value={testEmail}
+            onChange={e => setTestEmail(e.target.value)}
+            placeholder="your@email.com"
+          />
+          <button
+            onClick={handleTest}
+            disabled={testing || !testEmail.trim()}
+            className="px-4 py-2 rounded-lg text-sm font-semibold border border-surface-600 text-slate-300 bg-surface-700 hover:bg-surface-600 disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            {testing ? "Sending…" : "Send Test"}
+          </button>
+        </div>
+        {testMsg && (
+          <p className={`text-xs mt-1.5 ${testMsg.type === "ok" ? "text-green-400" : "text-red-400"}`}>
+            {testMsg.text}
+          </p>
+        )}
+        <p className="text-[11px] text-slate-600 mt-1.5">
+          Save your settings first, then send a test to verify everything works.
+        </p>
+      </div>
+    </SectionCard>
   );
 }

@@ -76,6 +76,17 @@ export const api = {
   }),
   testWazuhConnection: () => req<ConnectionTestResult>("/test-connection/wazuh", { method: "POST" }),
   testNinjaConnection: () => req<ConnectionTestResult>("/test-connection/ninja", { method: "POST" }),
+  sendTestEmail: (to: string) => req<{ ok: boolean }>("/email/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to }),
+  }),
+  sendInviteEmail: (username: string, to: string, password: string, dashboard_url?: string) =>
+    req<{ ok: boolean }>(`/auth/users/${encodeURIComponent(username)}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, password, dashboard_url: dashboard_url ?? "" }),
+    }),
   wazuhAlertVolume: (timeframe: string) =>
     req<AlertBucket[]>(`/wazuh/alert-volume?timeframe=${timeframe}`),
   refreshWazuh: () => req("/wazuh/refresh", { method: "POST" }),
@@ -464,6 +475,15 @@ export interface AppSettings {
   auto_refresh_interval: number;
   noisy_rules_page_size: number;
   alerts_page_size: number;
+  // SMTP
+  smtp_enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_username: string;
+  smtp_password: string;
+  smtp_from_email: string;
+  smtp_from_name: string;
+  smtp_tls: boolean;
   // Informational — from environment, not persisted
   wazuh_url_display: string;
   wazuh_username_display: string;

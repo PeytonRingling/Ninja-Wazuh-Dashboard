@@ -44,6 +44,15 @@ SETTINGS_DEFAULTS: dict[str, str] = {
     "auto_refresh_interval":  "60",
     "noisy_rules_page_size":  "25",
     "alerts_page_size":       "25",
+    # SMTP
+    "smtp_enabled":           "false",
+    "smtp_host":              "",
+    "smtp_port":              "587",
+    "smtp_username":          "",
+    "smtp_password":          "",
+    "smtp_from_email":        "",
+    "smtp_from_name":         "OPS Dashboard",
+    "smtp_tls":               "true",
 }
 
 
