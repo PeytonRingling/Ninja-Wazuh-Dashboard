@@ -462,13 +462,17 @@ class WazuhClient:
                         "size": 5,
                         "sort": [{"timestamp": {"order": "desc"}}],
                         "_source": [
-                            "timestamp", "agent",
+                            "timestamp", "agent", "manager.name",
+                            # Rule metadata
+                            "rule.description", "rule.level",
+                            "rule.groups", "rule.mitre",
                             # FIM / syscheck fields
                             "syscheck.path", "syscheck.event",
                             "syscheck.value_name", "syscheck.value_type",
                             "syscheck.changed_attributes",
                             "syscheck.content_changes",
                             "syscheck.sha1_before", "syscheck.sha1_after",
+                            "syscheck.md5_before", "syscheck.md5_after",
                             "syscheck.size_before", "syscheck.size_after",
                             "syscheck.mtime_after",
                             "syscheck.uname_after", "syscheck.gname_after",
@@ -511,9 +515,21 @@ class WazuhClient:
             src = hit["_source"]
             win      = (src.get("data") or {}).get("win") or {}
             syscheck = src.get("syscheck") or {}
+            rule_meta = src.get("rule") or {}
+            agent     = src.get("agent") or {}
+            mitre     = rule_meta.get("mitre") or {}
             samples.append({
                 "timestamp":                  src.get("timestamp"),
-                "agent_name":                 (src.get("agent") or {}).get("name"),
+                "agent_name":                 agent.get("name"),
+                "agent_ip":                   agent.get("ip"),
+                "agent_id":                   agent.get("id"),
+                "manager_name":               (src.get("manager") or {}).get("name"),
+                "rule_description":           rule_meta.get("description"),
+                "rule_level":                 rule_meta.get("level"),
+                "rule_groups":                rule_meta.get("groups") or [],
+                "mitre_ids":                  mitre.get("id") or [],
+                "mitre_techniques":           mitre.get("technique") or [],
+                "mitre_tactics":              mitre.get("tactic") or [],
                 "decoder":                    (src.get("decoder") or {}).get("name"),
                 "location":                   src.get("location"),
                 "syscheck_path":              syscheck.get("path"),
@@ -524,6 +540,8 @@ class WazuhClient:
                 "syscheck_content_changes":   syscheck.get("content_changes"),
                 "syscheck_sha1_before":       syscheck.get("sha1_before"),
                 "syscheck_sha1_after":        syscheck.get("sha1_after"),
+                "syscheck_md5_before":        syscheck.get("md5_before"),
+                "syscheck_md5_after":         syscheck.get("md5_after"),
                 "syscheck_size_before":       syscheck.get("size_before"),
                 "syscheck_size_after":        syscheck.get("size_after"),
                 "syscheck_mtime_after":       syscheck.get("mtime_after"),

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   NoisyRule, RuleBreakdown, RuleBreakdownBucket, AlertSample,
-  WazuhRuleDetail, RuleTrend, NinjaDevice,
+  WazuhRuleDetail, RuleTrend, NinjaDevice, DimensionDetail,
 } from "../../api/client";
 import { api } from "../../api/client";
 import SevBadge from "../SevBadge";
@@ -285,8 +285,10 @@ function MiniBarList({ label, items, color = "bg-accent/60" }: {
 
 // ── PathBarList (wrapping, grouped) ──────────────────────────────────────────
 
-function PathBarList({ label, items, color = "bg-yellow-400/50" }: {
+function PathBarList({ label, items, color = "bg-yellow-400/50", onPathClick, selectedPath }: {
   label: string; items: RuleBreakdownBucket[]; color?: string;
+  onPathClick?: (path: string, count: number) => void;
+  selectedPath?: string | null;
 }) {
   const grouped = groupPaths(items);
   if (!grouped.length) return null;
@@ -294,26 +296,674 @@ function PathBarList({ label, items, color = "bg-yellow-400/50" }: {
   return (
     <div>
       <p className="text-[9px] font-semibold text-slate-600 uppercase tracking-widest mb-2.5">{label}</p>
-      <div className="space-y-3">
-        {grouped.slice(0, 8).map(b => (
-          <div key={b.value}>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="flex-1 h-1.5 bg-surface-700 rounded-full overflow-hidden">
-                <div className={`h-full ${color} rounded-full`} style={{ width: `${(b.count / max) * 100}%` }} />
+      <div className="space-y-2">
+        {grouped.slice(0, 8).map(b => {
+          const isActive = selectedPath === b.value;
+          if (onPathClick) {
+            return (
+              <button
+                key={b.value}
+                onClick={() => onPathClick(isActive ? "" : b.value, b.count)}
+                className={`w-full text-left rounded-lg px-2.5 py-2 border transition-all ${
+                  isActive
+                    ? "bg-yellow-500/10 border-yellow-500/30"
+                    : "bg-surface-800/60 border-surface-700 hover:bg-surface-700/70 hover:border-surface-600"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="flex-1 h-1.5 bg-surface-700 rounded-full overflow-hidden">
+                    <div className={`h-full ${color} rounded-full`} style={{ width: `${(b.count / max) * 100}%` }} />
+                  </div>
+                  <span className="text-[11px] tabular-nums text-slate-500 shrink-0">{b.count.toLocaleString()}</span>
+                  <span className={`text-[10px] font-semibold shrink-0 transition-colors ${isActive ? "text-yellow-400" : "text-slate-600"}`}>
+                    {isActive ? "▸" : "›"}
+                  </span>
+                </div>
+                <span className={`text-[11px] font-mono leading-relaxed break-all ${isActive ? "text-yellow-300" : "text-slate-300"}`}>
+                  {b.value}
+                </span>
+              </button>
+            );
+          }
+          return (
+            <div key={b.value}>
+              <div className="flex items-center gap-2 mb-1">
+                <div className="flex-1 h-1.5 bg-surface-700 rounded-full overflow-hidden">
+                  <div className={`h-full ${color} rounded-full`} style={{ width: `${(b.count / max) * 100}%` }} />
+                </div>
+                <span className="text-[11px] tabular-nums text-slate-500 shrink-0">{b.count.toLocaleString()}</span>
               </div>
-              <span className="text-[11px] tabular-nums text-slate-500 shrink-0">{b.count.toLocaleString()}</span>
+              <span className="text-[11px] font-mono text-slate-300 leading-relaxed break-all select-all" title={b.value}>
+                {b.value}
+              </span>
             </div>
-            <span
-              className="text-[11px] font-mono text-slate-300 leading-relaxed break-all select-all"
-              title={b.value}
-            >
-              {b.value}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
+}
+
+// ── Path Detail Drawer ────────────────────────────────────────────────────────
+
+function FimSampleCard({ sample, index, rule, agentName, pathCount }: {
+  sample: AlertSample;
+  index: number;
+  rule: NoisyRule;
+  agentName: string;
+  pathCount: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const evtCfg: Record<string, { color: string; border: string; bg: string }> = {
+    modified: { color: "#fbbf24", border: "rgba(251,191,36,0.35)",  bg: "rgba(251,191,36,0.12)" },
+    added:    { color: "#34d399", border: "rgba(52,211,153,0.35)",  bg: "rgba(52,211,153,0.12)" },
+    deleted:  { color: "#ff2d6d", border: "rgba(255,45,109,0.35)",  bg: "rgba(255,45,109,0.12)" },
+  };
+  const evt = evtCfg[sample.syscheck_event ?? ""] ?? { color: "#94a3b8", border: "rgba(148,163,184,0.25)", bg: "rgba(148,163,184,0.08)" };
+
+  const sevColor = rule.severity === "critical" ? "#ff2d6d"
+    : rule.severity === "high"   ? "#ff6b35"
+    : rule.severity === "medium" ? "#fbbf24"
+    : "#34d399";
+
+  const sha1Changed = !!(sample.syscheck_sha1_before && sample.syscheck_sha1_after
+    && sample.syscheck_sha1_before !== sample.syscheck_sha1_after);
+  const sizeChanged = sample.syscheck_size_before != null && sample.syscheck_size_after != null
+    && String(sample.syscheck_size_before) !== String(sample.syscheck_size_after);
+
+  const displayAgent = sample.agent_name ?? agentName;
+  const displayDesc  = sample.rule_description ?? rule.description;
+  const displayLevel = sample.rule_level ?? rule.level;
+  const groups       = sample.rule_groups ?? [];
+
+  // ── key-value rows for the WHAT HAPPENED table ──
+  const rows: Array<[string, React.ReactNode]> = [];
+
+  if (sample.syscheck_path)
+    rows.push(["File / Path", <span className="font-mono break-all text-yellow-200">{sample.syscheck_path}</span>]);
+
+  if (sample.syscheck_changed_attributes) {
+    const attrs = Array.isArray(sample.syscheck_changed_attributes)
+      ? sample.syscheck_changed_attributes
+      : String(sample.syscheck_changed_attributes).split(",").map(s => s.trim());
+    rows.push(["Changed Attributes", (
+      <div className="flex flex-wrap gap-1">
+        {attrs.map((a, i) => (
+          <span key={i} className="px-1.5 py-0.5 rounded border text-[10px] font-semibold"
+            style={{ background: "rgba(251,191,36,0.12)", borderColor: "rgba(251,191,36,0.3)", color: "#fbbf24" }}>
+            {a}
+          </span>
+        ))}
+      </div>
+    )]);
+  }
+
+  if (sample.user ?? sample.srcuser)
+    rows.push(["User", <span className="text-purple-300 font-mono">{sample.user ?? sample.srcuser}</span>]);
+
+  if (sample.tgt_user)
+    rows.push(["Target User", <span className="text-purple-200 font-mono">{sample.tgt_user}</span>]);
+
+  if (sample.syscheck_uname_after)
+    rows.push(["File Owner", <span className="text-slate-300 font-mono">{sample.syscheck_uname_after}</span>]);
+
+  if (sample.syscheck_perm_after)
+    rows.push(["Permissions", <span className="text-slate-300 font-mono">{sample.syscheck_perm_after}</span>]);
+
+  if (sample.syscheck_mtime_after)
+    rows.push(["Modification Time", (
+      <span className="text-slate-300 font-mono">
+        {typeof sample.syscheck_mtime_after === "number"
+          ? new Date(sample.syscheck_mtime_after * 1000).toLocaleString()
+          : sample.syscheck_mtime_after}
+      </span>
+    )]);
+
+  if (sample.syscheck_size_before != null)
+    rows.push(["Size Before", (
+      <span className={`font-mono ${sizeChanged ? "text-slate-500 line-through" : "text-slate-400"}`}>
+        {Number(sample.syscheck_size_before).toLocaleString()} B
+      </span>
+    )]);
+
+  if (sample.syscheck_size_after != null)
+    rows.push(["Size After", (
+      <span className={`font-mono ${sizeChanged ? "text-green-300 font-semibold" : "text-slate-400"}`}>
+        {Number(sample.syscheck_size_after).toLocaleString()} B
+        {sizeChanged && (
+          <span className="ml-2 text-[10px] text-slate-400 font-normal">
+            ({Number(sample.syscheck_size_after) > Number(sample.syscheck_size_before!) ? "+" : ""}
+            {(Number(sample.syscheck_size_after) - Number(sample.syscheck_size_before!)).toLocaleString()} B)
+          </span>
+        )}
+      </span>
+    )]);
+
+  if (sample.syscheck_md5_before)
+    rows.push(["MD5 Before", (
+      <span className="font-mono break-all text-slate-500 text-[10px]">{sample.syscheck_md5_before}</span>
+    )]);
+
+  if (sample.syscheck_md5_after)
+    rows.push(["MD5 After", (
+      <span className={`font-mono break-all text-[10px] ${sha1Changed ? "text-cyan-300" : "text-slate-400"}`}>
+        {sample.syscheck_md5_after}
+      </span>
+    )]);
+
+  if (sample.syscheck_sha1_before)
+    rows.push(["SHA1 Before", (
+      <span className={`font-mono break-all text-[10px] ${sha1Changed ? "text-slate-500 line-through" : "text-slate-400"}`}>
+        {sample.syscheck_sha1_before}
+      </span>
+    )]);
+
+  if (sample.syscheck_sha1_after)
+    rows.push(["SHA1 After", (
+      <div>
+        <span className={`font-mono break-all text-[10px] ${sha1Changed ? "text-yellow-200 font-semibold" : "text-slate-400"}`}>
+          {sample.syscheck_sha1_after}
+        </span>
+        {sha1Changed && <span className="ml-2 text-[10px] text-yellow-500">content changed</span>}
+        {!sha1Changed && sample.syscheck_sha1_before && (
+          <span className="ml-2 text-[10px] text-slate-600">hash unchanged — metadata only</span>
+        )}
+      </div>
+    )]);
+
+  if (sample.syscheck_value_name)
+    rows.push(["Registry Value", <span className="text-orange-300 font-mono break-all">{sample.syscheck_value_name}</span>]);
+
+  if (sample.syscheck_value_type)
+    rows.push(["Value Type", <span className="text-orange-200 font-mono">{sample.syscheck_value_type}</span>]);
+
+  if (sample.event_id)
+    rows.push(["Event ID", <span className="text-orange-400 font-mono font-semibold">{sample.event_id}</span>]);
+
+  if (sample.channel)
+    rows.push(["Channel", <span className="text-slate-300 font-mono">{sample.channel}</span>]);
+
+  if (sample.provider)
+    rows.push(["Provider", <span className="text-slate-300 font-mono">{sample.provider}</span>]);
+
+  if (sample.src_ip)
+    rows.push(["Source IP", <span className="text-red-300 font-mono">{sample.src_ip}</span>]);
+
+  if (sample.location)
+    rows.push(["Log Source", <span className="text-slate-400 font-mono break-all">{sample.location}</span>]);
+
+  const hasMitre = (sample.mitre_ids?.length ?? 0) > 0;
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "#0f0f23", border: "1px solid rgba(60,58,110,0.5)" }}>
+
+      {/* ── Header row (always visible) ── */}
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center gap-2.5 px-4 py-3 text-left transition-colors"
+        style={{ background: expanded ? "rgba(25,23,50,0.9)" : "transparent" }}
+      >
+        {/* Timestamp */}
+        {sample.timestamp && (
+          <span className="text-[10px] font-mono text-slate-500 shrink-0 tabular-nums">
+            {new Date(sample.timestamp).toLocaleString()}
+          </span>
+        )}
+        <span className="text-slate-700 shrink-0">|</span>
+        {/* Agent pill */}
+        <span className="text-[11px] font-mono font-semibold shrink-0 px-2 py-0.5 rounded"
+          style={{ background: "rgba(96,165,250,0.12)", color: "#60a5fa" }}>
+          {displayAgent}
+        </span>
+        {/* Event type */}
+        {sample.syscheck_event && (
+          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border shrink-0"
+            style={{ background: evt.bg, borderColor: evt.border, color: evt.color }}>
+            {sample.syscheck_event}
+          </span>
+        )}
+        {/* Fires count */}
+        <span className="text-[10px] font-semibold shrink-0 tabular-nums"
+          style={{ color: sevColor }}>
+          {pathCount.toLocaleString()}x on this path
+        </span>
+        {/* Description (fills space) */}
+        <span className="flex-1 text-[11px] text-slate-300 truncate font-medium">{displayDesc}</span>
+        {/* Level badge */}
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded border shrink-0 tabular-nums"
+          style={{ background: `${sevColor}18`, borderColor: `${sevColor}45`, color: sevColor }}>
+          Level {displayLevel}
+        </span>
+        {/* Chevron */}
+        <svg className={`w-3.5 h-3.5 text-slate-600 shrink-0 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {expanded && (
+        <div style={{ borderTop: "1px solid rgba(60,58,110,0.5)" }}>
+
+          {/* ── Rule info bar ── */}
+          <div className="px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5"
+            style={{ background: "rgba(13,12,30,0.8)", borderBottom: "1px solid rgba(50,48,90,0.5)" }}>
+            <span className="text-[12px] font-semibold text-slate-100">{displayDesc}</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                style={{ background: "rgba(124,58,237,0.15)", color: "#a78bfa", border: "1px solid rgba(124,58,237,0.3)" }}>
+                Rule {rule.rule_id}
+              </span>
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded tabular-nums"
+                style={{ background: `${sevColor}15`, color: sevColor, border: `1px solid ${sevColor}35` }}>
+                {pathCount.toLocaleString()} fired
+              </span>
+              <SevBadge severity={rule.severity} label={`Level ${displayLevel}`} />
+              {groups.map(g => (
+                <span key={g} className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+                  style={{ background: "rgba(71,85,105,0.25)", color: "#94a3b8", border: "1px solid rgba(71,85,105,0.3)" }}>
+                  {g}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* ── WHAT HAPPENED ── */}
+          <div className="px-4 py-3">
+            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-2">What Happened</p>
+            <div className="rounded-lg overflow-hidden" style={{ border: "1px solid rgba(50,48,90,0.6)", background: "rgba(8,8,20,0.7)" }}>
+
+              {/* Source sub-header */}
+              <div className="flex flex-wrap items-center gap-2 px-4 py-2.5"
+                style={{ background: "rgba(20,18,45,0.9)", borderBottom: "1px solid rgba(50,48,90,0.6)" }}>
+                <span className="text-[12px] font-semibold text-slate-200">
+                  {sample.decoder ?? (sample.syscheck_event ? "syscheck" : sample.provider ?? "Windows Event")}
+                </span>
+                {sample.syscheck_event && (
+                  <span className="text-[10px] px-2 py-0.5 rounded border font-semibold capitalize"
+                    style={{ background: evt.bg, borderColor: evt.border, color: evt.color }}>
+                    {sample.syscheck_event}
+                  </span>
+                )}
+                {sample.event_id && (
+                  <span className="text-[10px] px-2 py-0.5 rounded border font-mono"
+                    style={{ background: "rgba(251,146,60,0.1)", borderColor: "rgba(251,146,60,0.3)", color: "#fb923c" }}>
+                    Event ID {sample.event_id}
+                  </span>
+                )}
+                {sample.channel && (
+                  <span className="text-[10px] px-2 py-0.5 rounded border font-mono"
+                    style={{ background: "rgba(71,85,105,0.15)", borderColor: "rgba(71,85,105,0.3)", color: "#94a3b8" }}>
+                    {sample.channel}
+                  </span>
+                )}
+              </div>
+
+              {/* Field table */}
+              <table className="w-full text-[11px]">
+                <tbody>
+                  {rows.map(([label, node], i) => (
+                    <tr key={label + i} style={{ borderBottom: "1px solid rgba(40,38,80,0.4)" }}>
+                      <td className="py-2 pl-4 pr-3 text-slate-500 font-medium whitespace-nowrap align-top w-40">{label}</td>
+                      <td className="py-2 pr-4 text-slate-200 align-top leading-relaxed min-w-0 break-all">{node}</td>
+                    </tr>
+                  ))}
+                  {rows.length === 0 && (
+                    <tr><td colSpan={2} className="py-3 px-4 text-slate-600 italic">No structured fields available.</td></tr>
+                  )}
+                </tbody>
+              </table>
+
+              {/* Windows message (parsed) */}
+              {sample.message && (
+                <div className="px-4 py-3" style={{ borderTop: "1px solid rgba(50,48,90,0.5)" }}>
+                  <ParsedMessage message={sample.message} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Content changes / diff ── */}
+          {sample.syscheck_content_changes && (
+            <div className="px-4 pb-3">
+              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-2">Content Changes</p>
+              <pre className="text-[11px] font-mono rounded-lg p-3 overflow-x-auto leading-relaxed whitespace-pre-wrap break-all"
+                style={{ background: "rgba(8,8,20,0.8)", border: "1px solid rgba(50,48,90,0.5)", color: "#94a3b8" }}>
+                {sample.syscheck_content_changes}
+              </pre>
+            </div>
+          )}
+
+          {/* ── MITRE ATT&CK ── */}
+          {hasMitre && (
+            <div className="px-4 pb-3">
+              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-2">MITRE ATT&amp;CK</p>
+              <div className="flex flex-wrap gap-2">
+                {sample.mitre_ids!.map((id, i) => (
+                  <div key={id} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg"
+                    style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}>
+                    <span className="text-[10px] font-mono font-bold" style={{ color: "#f87171" }}>{id}</span>
+                    {sample.mitre_techniques?.[i] && (
+                      <span className="text-[10px] text-slate-400">{sample.mitre_techniques[i]}</span>
+                    )}
+                    {sample.mitre_tactics?.[i] && (
+                      <span className="text-[9px] px-1 py-0.5 rounded"
+                        style={{ background: "rgba(239,68,68,0.12)", color: "#fca5a5" }}>
+                        {sample.mitre_tactics[i]}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Footer ── */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2.5 text-[10px]"
+            style={{ background: "rgba(8,8,20,0.7)", borderTop: "1px solid rgba(50,48,90,0.5)" }}>
+            <span className="text-slate-500">
+              Agent: <span className="text-slate-300 font-mono font-semibold">{displayAgent}</span>
+            </span>
+            {sample.agent_ip && (
+              <span className="text-slate-500">
+                IP: <span className="text-slate-300 font-mono">{sample.agent_ip}</span>
+              </span>
+            )}
+            {sample.agent_id && (
+              <span className="text-slate-500">
+                ID: <span className="text-slate-300 font-mono">{sample.agent_id}</span>
+              </span>
+            )}
+            {sample.manager_name && (
+              <span className="text-slate-500">
+                Manager: <span className="text-slate-300 font-mono">{sample.manager_name}</span>
+              </span>
+            )}
+            {sample.decoder && (
+              <span className="text-slate-500">
+                Decoder: <span className="text-slate-300 font-mono">{sample.decoder}</span>
+              </span>
+            )}
+            {sample.timestamp && (
+              <span className="ml-auto text-slate-600 font-mono tabular-nums">
+                {new Date(sample.timestamp).toLocaleString()}
+              </span>
+            )}
+          </div>
+
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PathDetailDrawer({ rule, agentName, path, pathCount, hoursBack, onClose }: {
+  rule: NoisyRule;
+  agentName: string;
+  path: string;
+  pathCount: number;
+  hoursBack: number;
+  onClose: () => void;
+}) {
+  const [detail, setDetail]   = useState<DimensionDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notes, setNotes]     = useState("");
+  const [xmlOpen, setXmlOpen] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    setDetail(null);
+    api.wazuhRuleDimensionDetail(rule.rule_id, "syscheck_path", path, hoursBack)
+      .then(d => setDetail(d && (d as unknown as Record<string,unknown>).samples !== undefined ? d : null))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [rule.rule_id, path, hoursBack]);
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  const TODAY_STR = new Date().toISOString().split("T")[0];
+  function buildPathXml() {
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const notePart = notes.trim() ? ` - ${esc(notes.trim())}` : "";
+    const topUser = detail?.by_user?.[0]?.value;
+    const topEvt  = detail?.by_syscheck_event?.[0]?.value;
+    const opts: string[] = [];
+    if (topUser) opts.push(`  <!-- <user>${esc(topUser)}</user>  -->    <!-- scope to this user -->`);
+    if (topEvt)  opts.push(`  <!-- <field name="syscheck.event">${esc(topEvt)}</field>  -->    <!-- scope to ${topEvt} only -->`);
+    const optBlock = opts.length ? `\n  <!-- Optional: narrow further -->\n${opts.join("\n")}` : "";
+    return `<rule id="100960" level="0">
+  <if_sid>${rule.rule_id}</if_sid>
+  <field name="agent.name">${esc(agentName)}</field>
+  <field name="syscheck.path">${esc(path)}</field>${optBlock}
+  <description>False positive - ${esc(rule.description)} - ${esc(path)} on ${esc(agentName)}${notePart} - suppressed ${TODAY_STR}</description>
+</rule>`;
+  }
+
+  // Change-type color helpers
+  const evtColors: Record<string, string> = {
+    modified: "#fbbf24", added: "#34d399", deleted: "#ff2d6d",
+  };
+
+  const drawer = (
+    <>
+      <div className="fixed inset-0 bg-black/20" style={{ zIndex: 120 }} onClick={onClose} />
+      <div
+        className="fixed inset-y-0 right-0 w-[560px] flex flex-col"
+        style={{
+          zIndex: 130,
+          background: "linear-gradient(180deg, #1a1e3c 0%, #131628 100%)",
+          borderLeft: "1px solid rgba(251,191,36,0.3)",
+          boxShadow: "-8px 0 48px rgba(0,0,0,0.9), -1px 0 0 rgba(251,191,36,0.2)",
+          animation: "slideInRight 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      >
+        {/* Header */}
+        <div className="shrink-0 px-5 py-4 border-b" style={{ borderColor: "rgba(251,191,36,0.2)" }}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Rule {rule.rule_id} · {agentName} →</span>
+                <span
+                  className="px-2 py-0.5 rounded-md text-[10px] font-semibold border"
+                  style={{ background: "rgba(251,191,36,0.1)", borderColor: "rgba(251,191,36,0.3)", color: "#fbbf24" }}
+                >
+                  FIM Path
+                </span>
+              </div>
+              <p className="text-[12px] font-bold font-mono text-yellow-200 leading-snug break-all">{path}</p>
+              <p className="text-xs text-slate-500 mt-1">
+                {pathCount.toLocaleString()} alerts in last {hoursBack}h for this path
+              </p>
+            </div>
+            <button onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-surface-700 transition-colors shrink-0 mt-0.5">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="p-5 space-y-3">
+              {[60, 100, 80, 140, 80].map((h, i) => (
+                <div key={i} className="skeleton rounded-lg" style={{ height: h / 5 + 12 }} />
+              ))}
+            </div>
+          ) : !detail ? (
+            <div className="p-8 text-center text-slate-500 text-sm">No data returned for this path.</div>
+          ) : (
+            <div className="divide-y divide-surface-800">
+
+              {/* ── Activity Window ── */}
+              {(detail.first_seen || detail.last_seen) && (
+                <div className="px-5 py-4">
+                  <SectionLabel>Activity Window</SectionLabel>
+                  <div className="flex gap-8 text-[12px]">
+                    {detail.first_seen && (
+                      <div>
+                        <p className="text-[9px] text-slate-700 mb-1">First seen</p>
+                        <p className="text-slate-300 font-mono">{new Date(detail.first_seen).toLocaleString()}</p>
+                      </div>
+                    )}
+                    {detail.last_seen && (
+                      <div>
+                        <p className="text-[9px] text-slate-700 mb-1">Last seen</p>
+                        <p className="text-slate-300 font-mono">{new Date(detail.last_seen).toLocaleString()}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-[9px] text-slate-700 mb-1">Total alerts</p>
+                      <p className="text-slate-300 font-semibold">{detail.total?.toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Change Type Breakdown ── */}
+              {(detail.by_syscheck_event?.length ?? 0) > 0 && (
+                <div className="px-5 py-4">
+                  <SectionLabel>Change Type Breakdown</SectionLabel>
+                  <div className="flex gap-3 flex-wrap">
+                    {detail.by_syscheck_event.map(b => (
+                      <div key={b.value}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+                        style={{
+                          background: `${evtColors[b.value] ?? "#94a3b8"}18`,
+                          borderColor: `${evtColors[b.value] ?? "#94a3b8"}30`,
+                        }}
+                      >
+                        <span className="text-sm font-bold capitalize" style={{ color: evtColors[b.value] ?? "#94a3b8" }}>
+                          {b.value}
+                        </span>
+                        <span className="text-sm font-semibold text-slate-300 tabular-nums">{b.count.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {detail.by_syscheck_event.length === 1
+                    && detail.by_syscheck_event[0].value === "modified" && (
+                    <p className="text-[11px] text-slate-600 mt-2">
+                      Only modifications — no adds or deletes. Likely periodic write activity on an existing file.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* ── Who's Changing It ── */}
+              {(detail.by_user?.length ?? 0) > 0 && (
+                <div className="px-5 py-4">
+                  <SectionLabel>Triggered By</SectionLabel>
+                  <MiniBarList label="Users" items={detail.by_user} color="bg-purple-400/50" />
+                </div>
+              )}
+
+              {/* ── Hourly Pattern ── */}
+              {(detail.hourly?.length ?? 0) > 0 && (
+                <div className="px-5 py-4">
+                  <SectionLabel>Hourly Activity</SectionLabel>
+                  <div className="bg-surface-800 rounded-xl border border-surface-700 p-3">
+                    <HourlyChart data={detail.hourly} />
+                    <div className="flex justify-between mt-1.5 text-[9px] text-slate-700">
+                      <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span>
+                    </div>
+                  </div>
+                  {(() => {
+                    const max = Math.max(...detail.hourly.map(h => h.count), 1);
+                    const peak = detail.hourly.find(h => h.count === max);
+                    if (!peak) return null;
+                    const hr = new Date(peak.time).getUTCHours();
+                    const isBusinessHours = hr >= 8 && hr <= 18;
+                    return (
+                      <p className="text-[11px] mt-2" style={{ color: isBusinessHours ? "#94a3b8" : "#fbbf24" }}>
+                        {isBusinessHours
+                          ? `Peak at ${hr}:00 UTC — consistent with business-hours activity.`
+                          : `Peak at ${hr}:00 UTC — outside typical business hours, worth investigating.`}
+                      </p>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* ── Alert Samples ── */}
+              {(detail.samples?.length ?? 0) > 0 && (
+                <div className="px-5 py-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <SectionLabel>Alert Samples</SectionLabel>
+                    <span className="text-[10px] text-slate-600">{detail.samples.length} most recent</span>
+                  </div>
+                  <div className="space-y-2">
+                    {detail.samples.map((s, i) => (
+                      <FimSampleCard key={i} sample={s} index={i} rule={rule} agentName={agentName} pathCount={pathCount} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Suppression XML ── */}
+              <div className="px-5 py-4">
+                <SectionLabel>Path-Scoped Suppression Rule</SectionLabel>
+                <p className="text-[11px] text-slate-500 mb-3 leading-relaxed">
+                  Suppresses alerts for <span className="text-yellow-300 font-mono break-all">{path}</span> on{" "}
+                  <span className="text-slate-300 font-mono">{agentName}</span> only.
+                </p>
+                <div className="mb-3">
+                  <label className="text-[10px] text-slate-600 block mb-1.5">Reason / notes (optional)</label>
+                  <textarea
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    placeholder={`e.g. Known deployment tool writes to this path on ${agentName}`}
+                    rows={2}
+                    className="w-full bg-surface-800 border border-surface-600 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-accent/60 resize-none"
+                  />
+                </div>
+                <div className="bg-surface-800 rounded-xl border border-surface-700 overflow-hidden">
+                  <button
+                    onClick={() => setXmlOpen(o => !o)}
+                    className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-slate-300 hover:text-white hover:bg-surface-700/50 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+                      </svg>
+                      {xmlOpen ? "Hide XML" : "Show path-scoped suppression XML"}
+                    </span>
+                    <span className={`text-slate-600 transition-transform ${xmlOpen ? "rotate-180" : ""}`}>▾</span>
+                  </button>
+                  {xmlOpen && (
+                    <div className="border-t border-surface-700 p-4 bg-surface-900/50">
+                      <pre className="text-[11px] font-mono text-slate-300 leading-relaxed whitespace-pre bg-black/30 rounded-lg border border-surface-700 p-3 mb-3 overflow-x-auto">
+                        {buildPathXml()}
+                      </pre>
+                      <div className="flex items-center gap-3">
+                        <CopyButton text={buildPathXml()} label="Copy XML" onCopy={() => {
+                          api.addSuppressionLog({
+                            rule_id: rule.rule_id,
+                            description: `${rule.description} [agent: ${agentName}, path: ${path}]`,
+                            alert_count: pathCount,
+                            notes: notes.trim() || undefined,
+                          }).catch(() => {});
+                        }} />
+                        <p className="text-[10px] text-slate-600">→ <span className="font-mono">/var/ossec/etc/rules/local_rules.xml</span></p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+
+  return createPortal(drawer, document.body);
 }
 
 // ── ParsedMessage ─────────────────────────────────────────────────────────────
@@ -404,6 +1054,364 @@ function QuickSuppressPopover({ ruleId, description, alertCount, totalAlerts, on
   );
 }
 
+// ── Agent Detail Drawer ───────────────────────────────────────────────────────
+
+function buildAgentSuppressXml(
+  ruleId: string,
+  description: string,
+  agentName: string,
+  detail: DimensionDetail | null,
+  notes: string,
+  index = 0,
+): string {
+  const id = 100950 + index;
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const notesPart = notes.trim() ? ` - ${esc(notes.trim())}` : "";
+
+  const conditions: string[] = [];
+
+  // Suggest optional conditions as XML comments based on what was found
+  const topUser   = detail?.by_user?.[0]?.value;
+  const topEvt    = detail?.by_event_id?.[0]?.value;
+  const topPath   = detail?.by_syscheck_path?.[0]?.value;
+  const topLoc    = detail?.by_location?.[0]?.value;
+
+  if (topUser)  conditions.push(`  <!-- <user>${esc(topUser)}</user>  -->    <!-- scope to this user -->`);
+  if (topEvt)   conditions.push(`  <!-- <id>${esc(topEvt)}</id>  -->    <!-- scope to this Event ID -->`);
+  if (topPath)  conditions.push(`  <!-- <field name="syscheck.path">${esc(topPath)}</field>  -->    <!-- scope to this path -->`);
+  if (topLoc)   conditions.push(`  <!-- <location>${esc(topLoc)}</location>  -->    <!-- scope to this log source -->`);
+
+  const optBlock = conditions.length
+    ? `\n  <!-- Optional: narrow conditions (uncomment to add) -->\n${conditions.join("\n")}`
+    : "";
+
+  return `<rule id="${id}" level="0">
+  <if_sid>${ruleId}</if_sid>
+  <field name="agent.name">${esc(agentName)}</field>${optBlock}
+  <description>False positive - ${esc(description)} on ${esc(agentName)}${notesPart} - suppressed ${TODAY}</description>
+</rule>`;
+}
+
+function AlertSampleCard({ sample, index }: { sample: AlertSample; index: number }) {
+  const [expanded, setExpanded] = useState(index === 0);
+  const fields: [string, string | null | undefined, string][] = [
+    ["Time",     sample.timestamp ? new Date(sample.timestamp).toLocaleString() : null, "text-slate-400 font-mono"],
+    ["Decoder",  sample.decoder,      "text-slate-400 font-mono"],
+    ["Location", sample.location,     "text-slate-400 font-mono break-all"],
+    ["Event ID", sample.event_id,     "text-yellow-400 font-mono"],
+    ["Channel",  sample.channel,      "text-slate-400 font-mono"],
+    ["Provider", sample.provider,     "text-slate-400 font-mono"],
+    ["User",     sample.user ?? sample.srcuser ?? sample.tgt_user, "text-purple-400 font-mono"],
+    ["Src IP",   sample.src_ip,       "text-red-400 font-mono"],
+    ["Path",     sample.syscheck_path,"text-yellow-400 font-mono break-all"],
+    ["Change",   sample.syscheck_event, "text-slate-300"],
+    ["Value",    sample.syscheck_value_name, "text-slate-300 font-mono break-all"],
+  ];
+  const visible = fields.filter(([, v]) => v);
+
+  return (
+    <div className="bg-surface-900 border border-surface-700 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-surface-800/50 transition-colors"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[10px] font-semibold text-slate-600 shrink-0">#{index + 1}</span>
+          {sample.timestamp && (
+            <span className="text-[11px] font-mono text-slate-500 shrink-0">
+              {new Date(sample.timestamp).toLocaleString()}
+            </span>
+          )}
+          {sample.event_id && (
+            <span className="text-[11px] font-mono text-yellow-400 shrink-0">EID {sample.event_id}</span>
+          )}
+          {(sample.user ?? sample.srcuser) && (
+            <span className="text-[11px] font-mono text-purple-400 truncate">{sample.user ?? sample.srcuser}</span>
+          )}
+          {sample.syscheck_path && !sample.event_id && (
+            <span className="text-[11px] font-mono text-yellow-400 truncate">{sample.syscheck_path}</span>
+          )}
+        </div>
+        <span className={`text-slate-600 text-xs transition-transform shrink-0 ml-2 ${expanded ? "rotate-180" : ""}`}>▾</span>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-surface-700 px-3 py-2.5 space-y-1.5">
+          {visible.map(([label, val, cls]) => (
+            <div key={label} className="flex gap-2 text-[11px]">
+              <span className="text-slate-600 w-20 shrink-0 text-right">{label}</span>
+              <span className={cls}>{val}</span>
+            </div>
+          ))}
+          {sample.message && (
+            <div className="border-t border-surface-700 pt-2 mt-1">
+              <ParsedMessage message={sample.message} />
+            </div>
+          )}
+          {(sample.syscheck_sha1_after || sample.syscheck_sha1_before) && (
+            <div className="border-t border-surface-700 pt-2 mt-1 space-y-1">
+              {sample.syscheck_sha1_before && (
+                <div className="flex gap-2 text-[11px]">
+                  <span className="text-slate-600 w-20 shrink-0 text-right">SHA1 before</span>
+                  <span className="text-slate-500 font-mono break-all">{sample.syscheck_sha1_before}</span>
+                </div>
+              )}
+              {sample.syscheck_sha1_after && (
+                <div className="flex gap-2 text-[11px]">
+                  <span className="text-slate-600 w-20 shrink-0 text-right">SHA1 after</span>
+                  <span className="text-slate-400 font-mono break-all">{sample.syscheck_sha1_after}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentDetailDrawer({ rule, agentName, agentCount, hoursBack, onClose }: {
+  rule: NoisyRule;
+  agentName: string;
+  agentCount: number;
+  hoursBack: number;
+  onClose: () => void;
+}) {
+  const [detail, setDetail]         = useState<DimensionDetail | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [notes, setNotes]           = useState("");
+  const [xmlOpen, setXmlOpen]       = useState(false);
+  const [selectedPath, setSelectedPath]         = useState<string | null>(null);
+  const [selectedPathCount, setSelectedPathCount] = useState(0);
+
+  useEffect(() => {
+    setLoading(true);
+    api.wazuhRuleDimensionDetail(rule.rule_id, "agent", agentName, hoursBack)
+      .then(d => setDetail(d))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [rule.rule_id, agentName, hoursBack]);
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  const xml = buildAgentSuppressXml(rule.rule_id, rule.description, agentName, detail, notes, 0);
+
+  const drawer = (
+    <>
+      <div className="fixed inset-0 bg-black/25" style={{ zIndex: 80 }} onClick={onClose} />
+      <div
+        className="fixed inset-y-0 right-0 w-[600px] flex flex-col"
+        style={{
+          zIndex: 90,
+          background: "linear-gradient(180deg, #1c1a42 0%, #161530 100%)",
+          borderLeft: "1px solid rgba(168,85,247,0.35)",
+          boxShadow: "-8px 0 48px rgba(0,0,0,0.9), -1px 0 0 rgba(168,85,247,0.3)",
+          animation: "slideInRight 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      >
+        {/* Header */}
+        <div className="shrink-0 px-5 py-4 border-b" style={{ borderColor: "rgba(168,85,247,0.2)" }}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Rule {rule.rule_id} →</span>
+                <span
+                  className="px-2 py-0.5 rounded-md text-[10px] font-semibold border"
+                  style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.3)", color: "#a855f7" }}
+                >
+                  Agent
+                </span>
+              </div>
+              <p className="text-base font-bold text-slate-100 font-mono leading-snug">{agentName}</p>
+              <p className="text-xs text-slate-500 mt-1">
+                {agentCount.toLocaleString()} alerts in last {hoursBack}h from this agent for this rule
+              </p>
+            </div>
+            <button onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-surface-700 transition-colors shrink-0 mt-0.5">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="p-5 space-y-3">
+              {[80, 120, 100, 160, 80].map((h, i) => (
+                <div key={i} className="skeleton rounded-lg" style={{ height: h / 5 + 12 }} />
+              ))}
+            </div>
+          ) : (
+            <div className="divide-y divide-surface-800">
+
+              {/* ── First / Last Seen ── */}
+              {(detail?.first_seen || detail?.last_seen) && (
+                <div className="px-5 py-4">
+                  <SectionLabel>Activity Window</SectionLabel>
+                  <div className="flex gap-8 text-[12px]">
+                    {detail.first_seen && (
+                      <div>
+                        <p className="text-[9px] text-slate-700 mb-1">First seen</p>
+                        <p className="text-slate-300 font-mono">{new Date(detail.first_seen).toLocaleString()}</p>
+                      </div>
+                    )}
+                    {detail.last_seen && (
+                      <div>
+                        <p className="text-[9px] text-slate-700 mb-1">Last seen</p>
+                        <p className="text-slate-300 font-mono">{new Date(detail.last_seen).toLocaleString()}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Pattern Breakdown ── */}
+              {detail && detail.samples !== undefined && (
+                <div className="px-5 py-4 space-y-4">
+                  <SectionLabel>Alert Patterns on This Agent</SectionLabel>
+                  <p className="text-[11px] text-slate-600 -mt-2">
+                    Use these values to scope your suppression rule precisely.
+                  </p>
+
+                  {(detail.by_event_id?.length ?? 0) > 0 && (
+                    <MiniBarList label="Windows Event IDs" items={detail.by_event_id} color="bg-orange-400/50" />
+                  )}
+                  {(detail.by_user?.length ?? 0) > 0 && (
+                    <MiniBarList label="Users" items={detail.by_user} color="bg-purple-400/50" />
+                  )}
+                  {(detail.by_syscheck_path?.length ?? 0) > 0 && (
+                    <PathBarList
+                      label="File / Registry Paths"
+                      items={detail.by_syscheck_path}
+                      color="bg-yellow-400/50"
+                      onPathClick={(p, count) => { setSelectedPath(p || null); setSelectedPathCount(count); }}
+                      selectedPath={selectedPath}
+                    />
+                  )}
+                  {(detail.by_syscheck_event?.length ?? 0) > 0 && (
+                    <MiniBarList label="FIM Event Types" items={detail.by_syscheck_event} color="bg-cyan-400/40" />
+                  )}
+                  {(detail.by_location?.length ?? 0) > 0 && (
+                    <MiniBarList label="Log Sources" items={detail.by_location} color="bg-slate-400/40" />
+                  )}
+                  {(detail.by_value_name?.length ?? 0) > 0 && (
+                    <MiniBarList label="Registry Value Names" items={detail.by_value_name} color="bg-pink-400/40" />
+                  )}
+
+                  {/* Hourly chart */}
+                  {(detail.hourly?.length ?? 0) > 0 && (
+                    <div className="bg-surface-800 rounded-xl border border-surface-700 p-3">
+                      <p className="text-[9px] text-slate-600 uppercase tracking-widest font-semibold mb-3">
+                        Hourly Distribution (this agent)
+                      </p>
+                      <HourlyChart data={detail.hourly} />
+                      <div className="flex justify-between mt-1.5 text-[9px] text-slate-700">
+                        <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Alert Samples ── */}
+              {detail && (detail.samples?.length ?? 0) > 0 && (
+                <div className="px-5 py-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <SectionLabel>Alert Samples</SectionLabel>
+                    <span className="text-[10px] text-slate-600">{detail.samples.length} sample{detail.samples.length !== 1 ? "s" : ""}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {detail.samples.map((s, i) => (
+                      <AlertSampleCard key={i} sample={s} index={i} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Targeted Suppression XML ── */}
+              <div className="px-5 py-4">
+                <SectionLabel>Targeted Suppression Rule</SectionLabel>
+                <p className="text-[11px] text-slate-500 mb-3 leading-relaxed">
+                  This rule suppresses alerts from <span className="text-slate-300 font-mono">{agentName}</span> only.
+                  Uncomment optional conditions to narrow further.
+                </p>
+
+                <div className="mb-3">
+                  <label className="text-[10px] text-slate-600 block mb-1.5">
+                    Reason / notes <span className="text-slate-700">(optional)</span>
+                  </label>
+                  <textarea
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    placeholder={`e.g. Expected activity on ${agentName} from deployment scripts`}
+                    rows={2}
+                    className="w-full bg-surface-800 border border-surface-600 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-accent/60 resize-none"
+                  />
+                </div>
+
+                <div className="bg-surface-800 rounded-xl border border-surface-700 overflow-hidden">
+                  <button
+                    onClick={() => setXmlOpen(o => !o)}
+                    className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-slate-300 hover:text-white hover:bg-surface-700/50 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+                      </svg>
+                      {xmlOpen ? "Hide XML" : "Show agent-scoped suppression XML"}
+                    </span>
+                    <span className={`text-slate-600 transition-transform ${xmlOpen ? "rotate-180" : ""}`}>▾</span>
+                  </button>
+                  {xmlOpen && (
+                    <div className="border-t border-surface-700 p-4 bg-surface-900/50">
+                      <pre className="text-[11px] font-mono text-slate-300 leading-relaxed whitespace-pre bg-black/30 rounded-lg border border-surface-700 p-3 mb-3 overflow-x-auto">{xml}</pre>
+                      <div className="flex items-center gap-3">
+                        <CopyButton text={xml} label="Copy XML" onCopy={() => {
+                          api.addSuppressionLog({
+                            rule_id: rule.rule_id,
+                            description: `${rule.description} [agent: ${agentName}]`,
+                            alert_count: agentCount,
+                            notes: notes.trim() || undefined,
+                          }).catch(() => {});
+                        }} />
+                        <p className="text-[10px] text-slate-600">→ <span className="font-mono">/var/ossec/etc/rules/local_rules.xml</span></p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      {createPortal(drawer, document.body)}
+      {selectedPath && (
+        <PathDetailDrawer
+          rule={rule}
+          agentName={agentName}
+          path={selectedPath}
+          pathCount={selectedPathCount}
+          hoursBack={hoursBack}
+          onClose={() => setSelectedPath(null)}
+        />
+      )}
+    </>
+  );
+}
+
 // ── Rule Side Drawer ──────────────────────────────────────────────────────────
 
 function RuleDrawer({ rule, hoursBack, allRules, totalAlerts, onClose, zBase = 40 }: {
@@ -414,13 +1422,14 @@ function RuleDrawer({ rule, hoursBack, allRules, totalAlerts, onClose, zBase = 4
   onClose: () => void;
   zBase?: number;
 }) {
-  const [breakdown, setBreakdown]     = useState<RuleBreakdown | null>(null);
-  const [ruleDetail, setRuleDetail]   = useState<WazuhRuleDetail | null>(null);
-  const [trend, setTrend]             = useState<RuleTrend | null>(null);
-  const [ninjaDevs, setNinjaDevs]     = useState<NinjaDevice[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [notes, setNotes]             = useState("");
-  const [xmlOpen, setXmlOpen]         = useState(false);
+  const [breakdown, setBreakdown]       = useState<RuleBreakdown | null>(null);
+  const [ruleDetail, setRuleDetail]     = useState<WazuhRuleDetail | null>(null);
+  const [trend, setTrend]               = useState<RuleTrend | null>(null);
+  const [ninjaDevs, setNinjaDevs]       = useState<NinjaDevice[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [notes, setNotes]               = useState("");
+  const [xmlOpen, setXmlOpen]           = useState(false);
+  const [agentDetailName, setAgentDetailName] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -708,13 +1717,22 @@ function RuleDrawer({ rule, hoursBack, allRules, totalAlerts, onClose, zBase = 4
 
                   {/* Agent list with NinjaOne context */}
                   <div className="space-y-1.5">
-                    {breakdown.top_agents.map((a, idx) => {
-                      const ninja = ninjaDevs.length > 0 ? matchNinja(a.value, ninjaDevs) : null;
-                      const pct   = breakdown.total > 0 ? Math.round((a.count / breakdown.total) * 100) : 0;
+                    {breakdown.top_agents.map((a) => {
+                      const ninja    = ninjaDevs.length > 0 ? matchNinja(a.value, ninjaDevs) : null;
+                      const pct      = breakdown.total > 0 ? Math.round((a.count / breakdown.total) * 100) : 0;
+                      const isActive = agentDetailName === a.value;
                       return (
-                        <div key={a.value} className="bg-surface-800 border border-surface-700 rounded-lg px-3 py-2">
+                        <button
+                          key={a.value}
+                          onClick={() => setAgentDetailName(isActive ? null : a.value)}
+                          className={`w-full text-left rounded-lg px-3 py-2 border transition-all ${
+                            isActive
+                              ? "bg-accent/10 border-accent/40 ring-1 ring-accent/20"
+                              : "bg-surface-800 border-surface-700 hover:bg-surface-700/70 hover:border-surface-600"
+                          }`}
+                        >
                           <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-xs font-mono font-semibold text-slate-200 truncate">{a.value}</span>
                                 {ninja?.offline === false && (
@@ -744,15 +1762,23 @@ function RuleDrawer({ rule, hoursBack, allRules, totalAlerts, onClose, zBase = 4
                                 </div>
                               )}
                             </div>
-                            <div className="text-right shrink-0">
-                              <span className="text-xs font-semibold text-slate-200 tabular-nums">{a.count.toLocaleString()}</span>
-                              <span className="text-[10px] text-slate-600 ml-1">({pct}%)</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div className="text-right">
+                                <span className="text-xs font-semibold text-slate-200 tabular-nums">{a.count.toLocaleString()}</span>
+                                <span className="text-[10px] text-slate-600 ml-1">({pct}%)</span>
+                              </div>
+                              <span className={`text-[10px] font-semibold transition-colors ${isActive ? "text-accent" : "text-slate-600"}`}>
+                                {isActive ? "▸" : "›"}
+                              </span>
                             </div>
                           </div>
                           <div className="mt-1.5 h-1 bg-surface-700 rounded-full overflow-hidden">
-                            <div className="h-full bg-accent/50 rounded-full" style={{ width: `${pct}%` }} />
+                            <div className={`h-full rounded-full transition-colors ${isActive ? "bg-accent" : "bg-accent/50"}`} style={{ width: `${pct}%` }} />
                           </div>
-                        </div>
+                          {isActive && (
+                            <p className="text-[10px] text-accent mt-1.5">Click to inspect alerts → view patterns &amp; write suppression rule</p>
+                          )}
+                        </button>
                       );
                     })}
                   </div>
@@ -879,7 +1905,20 @@ function RuleDrawer({ rule, hoursBack, allRules, totalAlerts, onClose, zBase = 4
     </>
   );
 
-  return createPortal(drawer, document.body);
+  return (
+    <>
+      {createPortal(drawer, document.body)}
+      {agentDetailName && breakdown && (
+        <AgentDetailDrawer
+          rule={rule}
+          agentName={agentDetailName}
+          agentCount={breakdown.top_agents.find(a => a.value === agentDetailName)?.count ?? 0}
+          hoursBack={hoursBack}
+          onClose={() => setAgentDetailName(null)}
+        />
+      )}
+    </>
+  );
 }
 
 // ── Exported rule detail drawer (used from other tabs) ────────────────────────

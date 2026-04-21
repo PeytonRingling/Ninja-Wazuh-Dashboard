@@ -202,6 +202,15 @@ export interface RuleBreakdownBucket { value: string; count: number; }
 export interface AlertSample {
   timestamp?:                   string;
   agent_name?:                  string;
+  agent_ip?:                    string;
+  agent_id?:                    string;
+  manager_name?:                string;
+  rule_description?:            string;
+  rule_level?:                  number;
+  rule_groups?:                 string[];
+  mitre_ids?:                   string[];
+  mitre_techniques?:            string[];
+  mitre_tactics?:               string[];
   decoder?:                     string;
   location?:                    string;
   // FIM / syscheck fields
@@ -213,6 +222,8 @@ export interface AlertSample {
   syscheck_content_changes?:    string;
   syscheck_sha1_before?:        string;
   syscheck_sha1_after?:         string;
+  syscheck_md5_before?:         string;
+  syscheck_md5_after?:          string;
   syscheck_size_before?:        string | number;
   syscheck_size_after?:         string | number;
   syscheck_mtime_after?:        string | number;
