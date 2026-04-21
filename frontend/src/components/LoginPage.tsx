@@ -55,10 +55,12 @@ export default function LoginPage() {
                 required
                 autoFocus
                 autoComplete="username"
-                className="w-full px-3.5 py-2.5 rounded-lg text-sm text-slate-100 outline-none transition-colors"
+                className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-colors"
                 style={{
                   background: "#0d0d1a",
                   border: "1px solid #2d2b55",
+                  color: "#f1f5f9",
+                  caretColor: "#a78bfa",
                 }}
                 onFocus={e => (e.target.style.borderColor = "#7c3aed")}
                 onBlur={e  => (e.target.style.borderColor = "#2d2b55")}
@@ -75,10 +77,12 @@ export default function LoginPage() {
                 onChange={e => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
-                className="w-full px-3.5 py-2.5 rounded-lg text-sm text-slate-100 outline-none transition-colors"
+                className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-colors"
                 style={{
                   background: "#0d0d1a",
                   border: "1px solid #2d2b55",
+                  color: "#f1f5f9",
+                  caretColor: "#a78bfa",
                 }}
                 onFocus={e => (e.target.style.borderColor = "#7c3aed")}
                 onBlur={e  => (e.target.style.borderColor = "#2d2b55")}
