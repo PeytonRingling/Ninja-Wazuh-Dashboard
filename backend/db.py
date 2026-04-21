@@ -50,6 +50,15 @@ SETTINGS_DEFAULTS: dict[str, str] = {
 def init_db() -> None:
     with _conn() as c:
         c.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                username      TEXT    UNIQUE NOT NULL,
+                password_hash TEXT    NOT NULL,
+                role          TEXT    NOT NULL DEFAULT 'viewer',
+                created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            )
+        """)
+        c.execute("""
             CREATE TABLE IF NOT EXISTS suppression_log (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -164,4 +173,54 @@ def save_settings(updates: dict[str, str]) -> None:
                        updated_at = excluded.updated_at""",
                 (key, value),
             )
+        c.commit()
+
+
+# ── Users ─────────────────────────────────────────────────────────────────────
+
+def user_count() -> int:
+    with _conn() as c:
+        return c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def create_user(username: str, password_hash: str, role: str = "viewer") -> dict:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+            (username, password_hash, role),
+        )
+        c.commit()
+        row = c.execute(
+            "SELECT id, username, role, created_at FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+        return dict(row)
+
+
+def get_user(username: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_users() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, username, role, created_at FROM users ORDER BY created_at"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def delete_user(username: str) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM users WHERE username = ?", (username,))
+        c.commit()
+
+
+def update_password(username: str, password_hash: str) -> None:
+    with _conn() as c:
+        c.execute(
+            "UPDATE users SET password_hash = ? WHERE username = ?",
+            (password_hash, username),
+        )
         c.commit()

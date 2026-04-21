@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api, Summary } from "./api/client";
+import { useAuth } from "./contexts/AuthContext";
+import LoginPage from "./components/LoginPage";
 import TopBar from "./components/TopBar";
 import HomeTab from "./components/home/HomeTab";
 import WazuhTab from "./components/wazuh/WazuhTab";
@@ -27,6 +29,18 @@ export interface WazuhNavOptions {
 }
 
 export default function App() {
+  const { user, loading: authLoading } = useAuth();
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#0d0d1a" }}>
+        <div className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) return <LoginPage />;
+
   const [tab, setTab] = useState<Tab>(tabFromHash);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);

@@ -20,9 +20,9 @@ if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -35,6 +35,7 @@ from ninja_client import NinjaClient
 from indexer_client import IndexerClient
 import cache
 import db as db_module
+import user_auth
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -71,8 +72,20 @@ async def lifespan(app: FastAPI):
     wazuh = WazuhClient(wazuh_auth, indexer)
     ninja = NinjaClient(ninja_auth)
 
-    # Initialize suppression log DB
+    # Initialize DB (creates tables including users)
     db_module.init_db()
+
+    # Create default admin on first run
+    if db_module.user_count() == 0:
+        import secrets as _secrets
+        default_password = _secrets.token_urlsafe(12)
+        db_module.create_user("admin", user_auth.hash_password(default_password), "admin")
+        logger.info("=" * 60)
+        logger.info("  DEFAULT ADMIN CREATED")
+        logger.info(f"  Username : admin")
+        logger.info(f"  Password : {default_password}")
+        logger.info("  Change this password after first login!")
+        logger.info("=" * 60)
 
     # Pre-authenticate both
     try:
@@ -98,6 +111,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Auth middleware — protects all /api/* except /api/auth/login ───────────────
+_PUBLIC_PATHS = {"/api/auth/login"}
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/") or path in _PUBLIC_PATHS:
+        return await call_next(request)
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+    username = user_auth.decode_token(auth_header[7:])
+    if not username:
+        return JSONResponse({"detail": "Invalid or expired token"}, status_code=401)
+    if not db_module.get_user(username):
+        return JSONResponse({"detail": "User not found"}, status_code=401)
+    return await call_next(request)
+
+app.include_router(user_auth.router)
 
 
 # ── Summary ────────────────────────────────────────────────────────────────────

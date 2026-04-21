@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { api, AppSettings, CveKeyword, ConnectionTestResult } from "../../api/client";
+import { api, AppSettings, CveKeyword, ConnectionTestResult, UserAccount } from "../../api/client";
+import { useAuth } from "../../contexts/AuthContext";
 
 // ── Small primitives ───────────────────────────────────────────────────────────
 
@@ -136,6 +137,7 @@ function Toast({ type, msg, onClose }: { type: "success" | "error"; msg: string;
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function SettingsTab() {
+  const { user: currentUser, logout } = useAuth();
   const [original, setOriginal] = useState<AppSettings | null>(null);
   const [draft, setDraft] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -453,8 +455,12 @@ export default function SettingsTab() {
         </div>
       </SectionCard>
 
+      {/* ── User Management ─────────────────────────────────────────────────── */}
+      <UserManagement currentUser={currentUser} onLogout={logout} />
+
       {/* ── Sticky save bar ──────────────────────────────────────────────────── */}
       {isDirty && (
+
         <div
           className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-4 px-8 py-4"
           style={{
@@ -479,6 +485,271 @@ export default function SettingsTab() {
             </button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── User Management ────────────────────────────────────────────────────────────
+
+function UserManagement({
+  currentUser,
+  onLogout,
+}: {
+  currentUser: { username: string; role: string } | null;
+  onLogout: () => void;
+}) {
+  const isAdmin = currentUser?.role === "admin";
+
+  const [users, setUsers]           = useState<UserAccount[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [newUsername, setNewUsername]   = useState("");
+  const [newPassword, setNewPassword]   = useState("");
+  const [newRole, setNewRole]           = useState<"viewer" | "admin">("viewer");
+  const [creating, setCreating]         = useState(false);
+  const [createError, setCreateError]   = useState<string | null>(null);
+  const [ownCurrent, setOwnCurrent]     = useState("");
+  const [ownNew, setOwnNew]             = useState("");
+  const [ownNew2, setOwnNew2]           = useState("");
+  const [changingPw, setChangingPw]     = useState(false);
+  const [pwMsg, setPwMsg]               = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [resetTarget, setResetTarget]   = useState<string | null>(null);
+  const [resetPw, setResetPw]           = useState("");
+  const [resetting, setResetting]       = useState(false);
+
+  const loadUsers = () => {
+    if (!isAdmin) return;
+    setLoadingUsers(true);
+    api.authListUsers()
+      .then(setUsers)
+      .catch(() => {})
+      .finally(() => setLoadingUsers(false));
+  };
+
+  useEffect(() => { loadUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleCreate = async () => {
+    setCreateError(null);
+    if (!newUsername.trim() || !newPassword.trim()) {
+      setCreateError("Username and password are required"); return;
+    }
+    setCreating(true);
+    try {
+      await api.authCreateUser({ username: newUsername.trim(), password: newPassword, role: newRole });
+      setNewUsername(""); setNewPassword(""); setNewRole("viewer");
+      loadUsers();
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message.replace(/^\d+: /, "") : "Failed to create user");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDelete = async (username: string) => {
+    if (!confirm(`Delete user "${username}"?`)) return;
+    await api.authDeleteUser(username).catch(() => {});
+    loadUsers();
+  };
+
+  const handleResetPw = async () => {
+    if (!resetTarget || !resetPw.trim()) return;
+    setResetting(true);
+    try {
+      await api.authAdminResetPassword(resetTarget, resetPw);
+      setResetTarget(null); setResetPw("");
+    } catch (e) {
+      alert(e instanceof Error ? e.message.replace(/^\d+: /, "") : "Failed");
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const handleChangePw = async () => {
+    setPwMsg(null);
+    if (ownNew !== ownNew2) { setPwMsg({ type: "err", text: "New passwords do not match" }); return; }
+    setChangingPw(true);
+    try {
+      await api.authChangeOwnPassword(ownCurrent, ownNew);
+      setOwnCurrent(""); setOwnNew(""); setOwnNew2("");
+      setPwMsg({ type: "ok", text: "Password changed successfully" });
+    } catch (e) {
+      setPwMsg({ type: "err", text: e instanceof Error ? e.message.replace(/^\d+: /, "") : "Failed" });
+    } finally {
+      setChangingPw(false);
+    }
+  };
+
+  const inputCls = "w-full px-3 py-2 rounded-lg text-sm text-slate-100 outline-none bg-surface-900 border border-surface-600 focus:border-accent transition-colors";
+
+  return (
+    <div className="space-y-4">
+      {/* ── Change own password ──────────────────────────────────────────────── */}
+      <SectionCard
+        title="Change Password"
+        description={`Changing password for ${currentUser?.username}`}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Current password</label>
+            <input type="password" className={inputCls} value={ownCurrent}
+              onChange={e => setOwnCurrent(e.target.value)} autoComplete="current-password" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">New password</label>
+            <input type="password" className={inputCls} value={ownNew}
+              onChange={e => setOwnNew(e.target.value)} autoComplete="new-password" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Confirm new password</label>
+            <input type="password" className={inputCls} value={ownNew2}
+              onChange={e => setOwnNew2(e.target.value)} autoComplete="new-password" />
+          </div>
+        </div>
+        {pwMsg && (
+          <p className={`text-xs mt-1 ${pwMsg.type === "ok" ? "text-green-400" : "text-red-400"}`}>
+            {pwMsg.text}
+          </p>
+        )}
+        <div className="flex items-center justify-between pt-1">
+          <button
+            onClick={handleChangePw}
+            disabled={changingPw || !ownCurrent || !ownNew || !ownNew2}
+            className="btn-primary px-4 py-2 text-sm font-semibold disabled:opacity-50"
+          >
+            {changingPw ? "Updating…" : "Update Password"}
+          </button>
+          <button
+            onClick={onLogout}
+            className="text-xs text-slate-500 hover:text-red-400 transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
+      </SectionCard>
+
+      {/* ── Admin: manage users ───────────────────────────────────────────────── */}
+      {isAdmin && (
+        <SectionCard
+          title="User Management"
+          description="Add or remove dashboard users. Admins can manage users; viewers have read-only access."
+        >
+          {/* User list */}
+          <div className="rounded-lg overflow-hidden border border-surface-700">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: "rgba(13,13,26,0.6)", borderBottom: "1px solid #2d2b55" }}>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Username</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Role</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Created</th>
+                  <th className="px-4 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {loadingUsers ? (
+                  <tr><td colSpan={4} className="px-4 py-3 text-slate-600 text-xs">Loading…</td></tr>
+                ) : users.map(u => (
+                  <tr key={u.username} style={{ borderBottom: "1px solid rgba(45,43,85,0.4)" }}>
+                    <td className="px-4 py-2.5 font-mono text-slate-200 text-xs">
+                      {u.username}
+                      {u.username === currentUser?.username && (
+                        <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded"
+                          style={{ background: "rgba(124,58,237,0.15)", color: "#a78bfa" }}>you</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                        u.role === "admin"
+                          ? "bg-accent/15 text-accent"
+                          : "bg-slate-700/40 text-slate-400"
+                      }`}>{u.role}</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-slate-500 font-mono">
+                      {new Date(u.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => { setResetTarget(u.username); setResetPw(""); }}
+                          className="text-[10px] text-slate-500 hover:text-yellow-400 transition-colors"
+                        >
+                          Reset pw
+                        </button>
+                        {u.username !== currentUser?.username && (
+                          <button
+                            onClick={() => handleDelete(u.username)}
+                            className="text-[10px] text-slate-500 hover:text-red-400 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Reset password modal inline */}
+          {resetTarget && (
+            <div className="flex items-center gap-3 p-3 rounded-lg"
+              style={{ background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.2)" }}>
+              <span className="text-xs text-yellow-400 shrink-0">Reset <span className="font-mono">{resetTarget}</span></span>
+              <input
+                type="password"
+                placeholder="New password (min 8 chars)"
+                className="flex-1 px-3 py-1.5 rounded text-xs text-slate-100 bg-surface-900 border border-surface-600 outline-none focus:border-yellow-500"
+                value={resetPw}
+                onChange={e => setResetPw(e.target.value)}
+              />
+              <button
+                onClick={handleResetPw}
+                disabled={resetting || resetPw.length < 8}
+                className="px-3 py-1.5 rounded text-xs font-semibold text-yellow-900 bg-yellow-400 hover:bg-yellow-300 disabled:opacity-50 transition-colors"
+              >
+                {resetting ? "…" : "Set"}
+              </button>
+              <button onClick={() => setResetTarget(null)} className="text-slate-500 hover:text-slate-300 text-xs">Cancel</button>
+            </div>
+          )}
+
+          {/* Add user form */}
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Add User</p>
+            <div className="flex flex-wrap gap-2 items-end">
+              <div className="flex-1 min-w-32">
+                <label className="block text-[10px] text-slate-500 mb-1">Username</label>
+                <input className={inputCls} value={newUsername}
+                  onChange={e => setNewUsername(e.target.value)} placeholder="username" autoComplete="off" />
+              </div>
+              <div className="flex-1 min-w-32">
+                <label className="block text-[10px] text-slate-500 mb-1">Password</label>
+                <input type="password" className={inputCls} value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)} placeholder="min 8 chars" autoComplete="new-password" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-500 mb-1">Role</label>
+                <select
+                  className={inputCls + " pr-8"}
+                  value={newRole}
+                  onChange={e => setNewRole(e.target.value as "viewer" | "admin")}
+                  style={{ background: "#0d0d1a" }}
+                >
+                  <option value="viewer">Viewer</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <button
+                onClick={handleCreate}
+                disabled={creating}
+                className="btn-primary px-4 py-2 text-sm font-semibold disabled:opacity-50"
+              >
+                {creating ? "Adding…" : "Add User"}
+              </button>
+            </div>
+            {createError && <p className="text-xs text-red-400 mt-1.5">{createError}</p>}
+          </div>
+        </SectionCard>
       )}
     </div>
   );

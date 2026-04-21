@@ -1,7 +1,18 @@
 const BASE = "/api";
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, options);
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = {
+    ...(options?.headers as Record<string, string> ?? {}),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+
+  if (res.status === 401) {
+    localStorage.removeItem("auth_token");
+    window.location.reload();
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`${res.status}: ${text}`);
@@ -79,9 +90,40 @@ export const api = {
     return req<NinjaActivity[]>(`/ninja/activities?${q}`);
   },
   refreshNinja: () => req("/ninja/refresh", { method: "POST" }),
+
+  // Auth
+  authMe: () => req<{ username: string; role: string }>("/auth/me"),
+  authListUsers: () => req<UserAccount[]>("/auth/users"),
+  authCreateUser: (body: { username: string; password: string; role: string }) =>
+    req<UserAccount>("/auth/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  authDeleteUser: (username: string) =>
+    req<{ ok: boolean }>(`/auth/users/${encodeURIComponent(username)}`, { method: "DELETE" }),
+  authAdminResetPassword: (username: string, new_password: string) =>
+    req<{ ok: boolean }>(`/auth/users/${encodeURIComponent(username)}/password`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password }),
+    }),
+  authChangeOwnPassword: (current_password: string, new_password: string) =>
+    req<{ ok: boolean }>("/auth/me/password", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password, new_password }),
+    }),
 };
 
 // Types
+export interface UserAccount {
+  id: number;
+  username: string;
+  role: string;
+  created_at: string;
+}
+
 export interface Summary {
   wazuh: WazuhSummary | null;
   wazuh_error: string | null;
