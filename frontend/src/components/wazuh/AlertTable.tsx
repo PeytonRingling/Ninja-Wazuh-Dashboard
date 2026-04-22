@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { AlertsResponse, WazuhAlert } from "../../api/client";
+import { AlertsResponse, GroupedAlertsResponse, GroupedAlert, WazuhAlert } from "../../api/client";
 import SevBadge from "../SevBadge";
 import { format, parseISO } from "date-fns";
 
 interface Props {
   data: AlertsResponse | null;
+  groupedData: GroupedAlertsResponse | null;
   error: string | null;
   page: number;
   pageSize: number;
@@ -474,13 +475,164 @@ function AlertRow({ alert }: { alert: WazuhAlert }) {
   );
 }
 
+// ── Grouped alert row ─────────────────────────────────────────────────────────
+
+function GroupedAlertRow({ group }: { group: GroupedAlert }) {
+  const [expanded, setExpanded] = useState(false);
+  const alert = group.alert;
+  const rule  = alert.rule ?? {};
+  const level = rule.level ?? 0;
+  const sev   = levelToSeverity(level);
+  const mitre = rule.mitre;
+  const hasWin = !!alert.data?.win;
+  const hasSca = !!alert.data?.sca;
+  const hasMitre = !!(mitre?.technique?.length || mitre?.tactic?.length);
+
+  return (
+    <>
+      <tr
+        onClick={() => setExpanded((e) => !e)}
+        className={`border-b border-surface-700/50 cursor-pointer transition-colors hover:bg-surface-700/40 ${ROW_SEV[sev] ?? ""} ${expanded ? "bg-surface-700/20" : ""}`}
+      >
+        <td className="py-2 px-3 text-xs text-slate-400 whitespace-nowrap font-mono">
+          {group.last_seen ? fmtTime(group.last_seen) : "—"}
+        </td>
+        <td className="py-2 px-3 text-xs font-medium text-slate-200 whitespace-nowrap">
+          {alert.agent?.name ?? "—"}
+        </td>
+        <td className="py-2 px-3 text-xs font-mono text-accent whitespace-nowrap">
+          {rule.id ?? "—"}
+        </td>
+        <td className="py-2 px-3 text-xs text-slate-300 max-w-sm">
+          <span className="truncate block" title={rule.description}>{rule.description ?? "—"}</span>
+        </td>
+        <td className="py-2 px-3">
+          <SevBadge severity={sev} label={String(level)} />
+        </td>
+        <td className="py-2 px-3 text-right whitespace-nowrap">
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold tabular-nums"
+            style={{ background: "rgba(124,58,237,0.15)", color: "#a78bfa", border: "1px solid rgba(124,58,237,0.3)" }}
+          >
+            ×{group.count.toLocaleString()}
+          </span>
+        </td>
+        <td className="py-2 px-3 text-center w-8">
+          <span className={`text-slate-500 text-xs transition-transform inline-block duration-200 ${expanded ? "rotate-180" : ""}`}>▾</span>
+        </td>
+      </tr>
+
+      {expanded && (
+        <tr className="border-b border-surface-600">
+          <td colSpan={7} className="bg-surface-900/60 px-5 py-4">
+            <div className="space-y-4 max-w-5xl">
+
+              {/* ── Rule summary strip ── */}
+              <div className="flex flex-wrap items-start gap-3 pb-3 border-b border-surface-700">
+                <SevBadge severity={sev} label={`Level ${level}`} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-slate-100 text-sm font-semibold leading-snug">{rule.description}</p>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                    <span className="text-xs text-slate-500">Rule <span className="font-mono text-slate-400">{rule.id}</span></span>
+                    <span className="text-xs text-slate-500">
+                      Fired <span className="text-slate-300 font-semibold">{group.count.toLocaleString()}×</span> in window
+                    </span>
+                    {group.first_seen && (
+                      <span className="text-xs text-slate-500">
+                        First: <span className="text-slate-400 font-mono">{fmtTime(group.first_seen)}</span>
+                      </span>
+                    )}
+                    {rule.mail && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">Email Notified</span>
+                    )}
+                    {rule.groups?.map((g) => (
+                      <span key={g} className="text-xs px-1.5 py-0.5 rounded bg-surface-600 text-slate-400 font-mono">{g}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Most recent occurrence detail ── */}
+              {(hasWin || hasSca) && (
+                <div>
+                  <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                    Most Recent Occurrence — {hasWin ? "What Happened" : hasSca ? `SCA — ${alert.data?.sca?.policy ?? "Security Assessment"}` : ""}
+                  </h4>
+                  <div className="bg-surface-800 rounded-xl border border-surface-600 px-4 py-3">
+                    {hasWin && <WinEventDetail alert={alert} />}
+                    {hasSca && <ScaEventDetail alert={alert} />}
+                  </div>
+                </div>
+              )}
+
+              {/* ── MITRE ATT&CK ── */}
+              {hasMitre && (
+                <div>
+                  <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">MITRE ATT&CK</h4>
+                  <div className="bg-blue-500/5 rounded-xl border border-blue-500/20 px-4 py-3 flex flex-wrap gap-4">
+                    {mitre?.id?.map((id, i) => (
+                      <div key={id} className="flex items-center gap-2.5">
+                        <span className="px-2 py-0.5 rounded font-mono text-xs bg-cyan-500/15 text-cyan-300 border border-cyan-500/25">{id}</span>
+                        <div>
+                          <p className="text-xs font-semibold text-slate-200">{mitre.technique?.[i] ?? ""}</p>
+                          <p className="text-xs text-slate-500">{mitre.tactic?.[i] ?? ""}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Agent + compliance ── */}
+              <div className="pt-2 border-t border-surface-700 space-y-2">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+                  <span className="text-slate-500">Agent</span>
+                  <span className="text-slate-200 font-medium">{alert.agent?.name}</span>
+                  <span className="font-mono text-slate-400">{alert.agent?.ip}</span>
+                  <span className="text-slate-500 font-mono">ID {alert.agent?.id}</span>
+                  {alert.manager?.name && (
+                    <>
+                      <span className="text-surface-600">·</span>
+                      <span className="text-slate-500">Manager</span>
+                      <span className="text-slate-400">{alert.manager.name}</span>
+                    </>
+                  )}
+                  {alert.location && (
+                    <>
+                      <span className="text-surface-600">·</span>
+                      <span className="text-slate-500">Source</span>
+                      <span className="text-slate-400 font-mono">{alert.location}</span>
+                    </>
+                  )}
+                </div>
+                <ComplianceRow rule={rule} />
+              </div>
+
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 // ── Table ─────────────────────────────────────────────────────────────────────
 
+const GROUPED_PAGE_SIZE = 50;
+
 export default function AlertTable({
-  data, error, page, pageSize, onPageChange,
+  data, groupedData, error, page, pageSize, onPageChange,
   hoursBack, severity, onSeverityChange, ruleId, onRuleIdChange,
 }: Props) {
-  const totalPages = data ? Math.ceil(data.total / pageSize) : 0;
+  const [grouped, setGrouped] = useState(true);
+  const [groupPage, setGroupPage] = useState(0);
+
+  const totalRawPages = data ? Math.ceil(data.total / pageSize) : 0;
+  const allGroups = groupedData?.groups ?? [];
+  const totalGroupPages = Math.ceil(allGroups.length / GROUPED_PAGE_SIZE);
+  const visibleGroups = allGroups.slice(groupPage * GROUPED_PAGE_SIZE, (groupPage + 1) * GROUPED_PAGE_SIZE);
+
+  const isLoading = grouped ? !groupedData : !data;
 
   return (
     <div className="card">
@@ -493,16 +645,38 @@ export default function AlertTable({
                 {severity}
               </span>
             )}
-            {data && (
-              <span className="ml-2 text-xs text-slate-500">{data.total.toLocaleString()} alerts</span>
-            )}
+            {grouped
+              ? groupedData && (
+                <span className="ml-2 text-xs text-slate-500">
+                  {groupedData.total_groups.toLocaleString()} unique · {groupedData.total_alerts.toLocaleString()} total
+                </span>
+              )
+              : data && (
+                <span className="ml-2 text-xs text-slate-500">{data.total.toLocaleString()} alerts</span>
+              )
+            }
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">Click any row to expand</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* Grouped / Raw toggle */}
+          <div className="flex rounded-lg overflow-hidden border border-surface-600 text-xs">
+            <button
+              onClick={() => setGrouped(true)}
+              className={`px-3 py-1.5 font-medium transition-colors ${grouped ? "bg-accent/20 text-accent" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              Grouped
+            </button>
+            <button
+              onClick={() => setGrouped(false)}
+              className={`px-3 py-1.5 font-medium transition-colors border-l border-surface-600 ${!grouped ? "bg-accent/20 text-accent" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              Raw
+            </button>
+          </div>
           <select
             value={severity}
-            onChange={(e) => onSeverityChange(e.target.value)}
+            onChange={(e) => { onSeverityChange(e.target.value); setGroupPage(0); }}
             className="bg-surface-700 border border-surface-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-accent"
           >
             <option value="">All severities</option>
@@ -515,12 +689,12 @@ export default function AlertTable({
             type="text"
             placeholder="Rule ID..."
             value={ruleId}
-            onChange={(e) => onRuleIdChange(e.target.value)}
+            onChange={(e) => { onRuleIdChange(e.target.value); setGroupPage(0); }}
             className="bg-surface-700 border border-surface-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-accent w-24"
           />
           {(severity || ruleId) && (
             <button
-              onClick={() => { onSeverityChange(""); onRuleIdChange(""); }}
+              onClick={() => { onSeverityChange(""); onRuleIdChange(""); setGroupPage(0); }}
               className="px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 border border-surface-600 hover:border-slate-500 transition-colors"
             >
               Clear
@@ -531,39 +705,79 @@ export default function AlertTable({
 
       {error ? (
         <div className="text-red-400 text-sm text-center py-8">{error}</div>
-      ) : !data ? (
+      ) : isLoading ? (
         <div className="space-y-1.5">{Array.from({ length: 10 }).map((_, i) => <div key={i} className="skeleton h-9 rounded" />)}</div>
-      ) : data.alerts.length === 0 ? (
-        <div className="text-slate-500 text-sm text-center py-8">No alerts match current filters</div>
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-surface-600">
-                  <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium whitespace-nowrap">Time</th>
-                  <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Agent</th>
-                  <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Rule</th>
-                  <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Description</th>
-                  <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Severity</th>
-                  <th className="w-8" />
-                </tr>
-              </thead>
-              <tbody>
-                {data.alerts.map((alert) => <AlertRow key={alert.id} alert={alert} />)}
-              </tbody>
-            </table>
-          </div>
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4 pt-4 border-t border-surface-600">
-              <span className="text-xs text-slate-500">Page {page + 1} of {totalPages} · {data.total.toLocaleString()} total</span>
-              <div className="flex gap-1">
-                <button onClick={() => onPageChange(page - 1)} disabled={page === 0} className="btn-ghost disabled:opacity-30 disabled:cursor-not-allowed text-xs px-2.5 py-1">← Prev</button>
-                <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages - 1} className="btn-ghost disabled:opacity-30 disabled:cursor-not-allowed text-xs px-2.5 py-1">Next →</button>
-              </div>
+      ) : grouped ? (
+        allGroups.length === 0 ? (
+          <div className="text-slate-500 text-sm text-center py-8">No alerts match current filters</div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-surface-600">
+                    <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium whitespace-nowrap">Most Recent</th>
+                    <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Agent</th>
+                    <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Rule</th>
+                    <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Description</th>
+                    <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Severity</th>
+                    <th className="text-right py-2 px-3 text-xs text-slate-400 font-medium whitespace-nowrap">Count</th>
+                    <th className="w-8" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleGroups.map((group, i) => (
+                    <GroupedAlertRow key={`${group.alert.rule?.id}-${group.alert.agent?.name}-${i}`} group={group} />
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-        </>
+            {totalGroupPages > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-surface-600">
+                <span className="text-xs text-slate-500">
+                  Page {groupPage + 1} of {totalGroupPages} · {allGroups.length.toLocaleString()} unique groups
+                </span>
+                <div className="flex gap-1">
+                  <button onClick={() => setGroupPage(p => p - 1)} disabled={groupPage === 0} className="btn-ghost disabled:opacity-30 disabled:cursor-not-allowed text-xs px-2.5 py-1">← Prev</button>
+                  <button onClick={() => setGroupPage(p => p + 1)} disabled={groupPage >= totalGroupPages - 1} className="btn-ghost disabled:opacity-30 disabled:cursor-not-allowed text-xs px-2.5 py-1">Next →</button>
+                </div>
+              </div>
+            )}
+          </>
+        )
+      ) : (
+        !data || data.alerts.length === 0 ? (
+          <div className="text-slate-500 text-sm text-center py-8">No alerts match current filters</div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-surface-600">
+                    <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium whitespace-nowrap">Time</th>
+                    <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Agent</th>
+                    <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Rule</th>
+                    <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Description</th>
+                    <th className="text-left py-2 px-3 text-xs text-slate-400 font-medium">Severity</th>
+                    <th className="w-8" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.alerts.map((alert) => <AlertRow key={alert.id} alert={alert} />)}
+                </tbody>
+              </table>
+            </div>
+            {totalRawPages > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-surface-600">
+                <span className="text-xs text-slate-500">Page {page + 1} of {totalRawPages} · {data.total.toLocaleString()} total</span>
+                <div className="flex gap-1">
+                  <button onClick={() => onPageChange(page - 1)} disabled={page === 0} className="btn-ghost disabled:opacity-30 disabled:cursor-not-allowed text-xs px-2.5 py-1">← Prev</button>
+                  <button onClick={() => onPageChange(page + 1)} disabled={page >= totalRawPages - 1} className="btn-ghost disabled:opacity-30 disabled:cursor-not-allowed text-xs px-2.5 py-1">Next →</button>
+                </div>
+              </div>
+            )}
+          </>
+        )
       )}
     </div>
   );

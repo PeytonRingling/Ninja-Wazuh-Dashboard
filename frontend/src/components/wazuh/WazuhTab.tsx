@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { api, AlertsResponse, AlertBucket, NoisyRule, WazuhAgent, WazuhSummary } from "../../api/client";
+import { api, AlertsResponse, GroupedAlertsResponse, AlertBucket, NoisyRule, WazuhAgent, WazuhSummary } from "../../api/client";
 import AlertVolumeChart from "./AlertVolumeChart";
 import NoisyRules from "./NoisyRules";
 import SeverityDonut from "./SeverityDonut";
@@ -53,6 +53,7 @@ export default function WazuhTab({ hasError, errorMsg, wazuhSummary, severityFil
   const [rulesError, setRulesError] = useState<string | null>(null);
 
   const [alerts, setAlerts] = useState<AlertsResponse | null>(null);
+  const [groupedAlerts, setGroupedAlerts] = useState<GroupedAlertsResponse | null>(null);
   const [alertsError, setAlertsError] = useState<string | null>(null);
   const [alertPage, setAlertPage] = useState(0);
   const [alertRuleId, setAlertRuleId] = useState("");
@@ -79,13 +80,22 @@ export default function WazuhTab({ hasError, errorMsg, wazuhSummary, severityFil
   const loadAlerts = useCallback(async () => {
     setAlertsError(null);
     try {
-      setAlerts(await api.wazuhAlerts({
-        limit: PAGE_SIZE,
-        offset: alertPage * PAGE_SIZE,
-        severity: severityFilter || undefined,
-        rule_id: alertRuleId || undefined,
-        hours_back: hoursBack,
-      }));
+      const [raw, grouped] = await Promise.all([
+        api.wazuhAlerts({
+          limit: PAGE_SIZE,
+          offset: alertPage * PAGE_SIZE,
+          severity: severityFilter || undefined,
+          rule_id: alertRuleId || undefined,
+          hours_back: hoursBack,
+        }),
+        api.wazuhGroupedAlerts({
+          severity: severityFilter || undefined,
+          rule_id: alertRuleId || undefined,
+          hours_back: hoursBack,
+        }),
+      ]);
+      setAlerts(raw);
+      setGroupedAlerts(grouped);
     } catch (e) { setAlertsError(e instanceof Error ? e.message : "Failed"); }
   }, [alertPage, severityFilter, alertRuleId, hoursBack]);
 
@@ -256,6 +266,7 @@ export default function WazuhTab({ hasError, errorMsg, wazuhSummary, severityFil
       {subTab === "alerts" && (
         <AlertTable
           data={alerts}
+          groupedData={groupedAlerts}
           error={alertsError}
           page={alertPage}
           pageSize={PAGE_SIZE}

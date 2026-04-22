@@ -234,6 +234,20 @@ async def get_wazuh_alerts(
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@app.get("/api/wazuh/alerts/grouped")
+async def get_wazuh_alerts_grouped(
+    severity: str = Query(None),
+    agent: str = Query(None),
+    rule_id: str = Query(None),
+    hours_back: int = Query(24, ge=1, le=168),
+    _: dict = Depends(get_current_user),
+):
+    try:
+        return await wazuh.get_grouped_alerts(severity, agent, rule_id, hours_back)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @app.get("/api/wazuh/noisy-rules")
 async def get_noisy_rules(hours_back: int = Query(24, ge=1, le=168)):
     try:

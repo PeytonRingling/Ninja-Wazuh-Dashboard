@@ -34,6 +34,14 @@ export const api = {
     if (params.hours_back) q.set("hours_back", String(params.hours_back));
     return req<AlertsResponse>(`/wazuh/alerts?${q}`);
   },
+  wazuhGroupedAlerts: (params: Omit<AlertParams, "limit" | "offset"> = {}) => {
+    const q = new URLSearchParams();
+    if (params.severity) q.set("severity", params.severity);
+    if (params.agent) q.set("agent", params.agent);
+    if (params.rule_id) q.set("rule_id", params.rule_id);
+    if (params.hours_back) q.set("hours_back", String(params.hours_back));
+    return req<GroupedAlertsResponse>(`/wazuh/alerts/grouped?${q}`);
+  },
   wazuhNoisyRules: (hours_back = 24) => req<NoisyRule[]>(`/wazuh/noisy-rules?hours_back=${hours_back}`),
   wazuhRuleBreakdown: (rule_id: string, hours_back = 24) =>
     req<RuleBreakdown>(`/wazuh/rule-breakdown?rule_id=${encodeURIComponent(rule_id)}&hours_back=${hours_back}`),
@@ -250,6 +258,19 @@ export interface AlertsResponse {
   total: number;
   alerts: WazuhAlert[];
   source?: "manager_stats" | "indexer";
+}
+
+export interface GroupedAlert {
+  count: number;
+  last_seen: string;
+  first_seen?: string;
+  alert: WazuhAlert;
+}
+
+export interface GroupedAlertsResponse {
+  total_groups: number;
+  total_alerts: number;
+  groups: GroupedAlert[];
 }
 
 export interface AgentAlertSummary {

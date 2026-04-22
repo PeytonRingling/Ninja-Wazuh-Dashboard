@@ -703,6 +703,98 @@ class WazuhClient:
             logger.warning(f"get_rule_trend({rule_id}) failed: {e}")
             return {"daily": [], "total_7d": 0, "trend": "flat", "trend_pct": 0, "top_processes": []}
 
+    # ── Grouped alerts ───────────────────────────────────────────────────────
+
+    async def get_grouped_alerts(
+        self,
+        severity: str = None,
+        agent: str = None,
+        rule_id: str = None,
+        hours_back: int = 24,
+    ) -> dict:
+        cache_key = f"wazuh_grouped_{severity}_{agent}_{rule_id}_{hours_back}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        must = [{"range": {"timestamp": {"gte": f"now-{hours_back}h"}}}]
+        if severity and severity in LEVEL_RANGES:
+            must.append({"range": {"rule.level": LEVEL_RANGES[severity]}})
+        if agent:
+            must.append({"match": {"agent.name": agent}})
+        if rule_id:
+            must.append({"term": {"rule.id": rule_id}})
+
+        result = await self.indexer.search({
+            "size": 0,
+            "query": {"bool": {"must": must}},
+            "aggs": {
+                "by_rule": {
+                    "terms": {
+                        "field": "rule.id",
+                        "size": 500,
+                        "order": {"_count": "desc"},
+                    },
+                    "aggs": {
+                        "by_agent": {
+                            "terms": {
+                                "field": "agent.name",
+                                "size": 50,
+                            },
+                            "aggs": {
+                                "latest": {
+                                    "top_hits": {
+                                        "size": 1,
+                                        "sort": [{"timestamp": {"order": "desc"}}],
+                                        "_source": [
+                                            "timestamp", "id",
+                                            "agent.*", "manager.*", "decoder.*",
+                                            "input.*", "location",
+                                            "rule.*", "data.*",
+                                        ],
+                                    }
+                                },
+                                "last_seen": {"max": {"field": "timestamp"}},
+                                "first_seen": {"min": {"field": "timestamp"}},
+                            }
+                        }
+                    }
+                }
+            },
+        })
+
+        groups = []
+        for rule_bucket in result["aggregations"]["by_rule"]["buckets"]:
+            for agent_bucket in rule_bucket["by_agent"]["buckets"]:
+                count = agent_bucket["doc_count"]
+                last_seen = agent_bucket["last_seen"].get("value_as_string")
+                first_seen = agent_bucket["first_seen"].get("value_as_string")
+
+                hits = agent_bucket["latest"]["hits"]["hits"]
+                if not hits:
+                    continue
+
+                src = hits[0]["_source"]
+                src["id"] = src.get("id") or hits[0]["_id"]
+
+                groups.append({
+                    "count": count,
+                    "last_seen": last_seen or src.get("timestamp"),
+                    "first_seen": first_seen,
+                    "alert": src,
+                })
+
+        # Sort by count descending so noisiest groups appear first
+        groups.sort(key=lambda g: g["count"], reverse=True)
+
+        out = {
+            "total_groups": len(groups),
+            "total_alerts": sum(g["count"] for g in groups),
+            "groups": groups,
+        }
+        cache.set(cache_key, out, ttl=60)
+        return out
+
     # ── Agents (manager API) ──────────────────────────────────────────────────
 
     async def get_agents(self) -> list:
