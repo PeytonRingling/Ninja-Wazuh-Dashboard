@@ -20,7 +20,7 @@ if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -240,7 +240,6 @@ async def get_wazuh_alerts_grouped(
     agent: str = Query(None),
     rule_id: str = Query(None),
     hours_back: int = Query(24, ge=1, le=168),
-    _: dict = Depends(get_current_user),
 ):
     try:
         return await wazuh.get_grouped_alerts(severity, agent, rule_id, hours_back)
