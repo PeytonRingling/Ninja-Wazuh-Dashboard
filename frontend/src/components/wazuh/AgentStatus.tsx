@@ -86,11 +86,25 @@ export default function AgentStatus({ data, error, onFilterAlerts }: Props) {
   const [ctx, setCtx] = useState<{ x: number; y: number; agent: WazuhAgent } | null>(null);
   const [restarting, setRestarting] = useState<string | null>(null);
   const [restartMsg, setRestartMsg] = useState<{ id: string; ok: boolean } | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "disconnected">("all");
 
   const sorted = data
     ? [...data].sort((a, b) => {
         const order: Record<string, number> = { active: 0, pending: 1, disconnected: 2, never_connected: 3 };
         return (order[a.status] ?? 4) - (order[b.status] ?? 4);
+      })
+    : null;
+
+  const filtered = sorted
+    ? sorted.filter((a) => {
+        const matchesSearch = a.name.toLowerCase().includes(search.toLowerCase()) ||
+          (a.ip ?? "").toLowerCase().includes(search.toLowerCase());
+        const matchesStatus =
+          statusFilter === "all" ||
+          (statusFilter === "active" && a.status === "active") ||
+          (statusFilter === "disconnected" && a.status !== "active");
+        return matchesSearch && matchesStatus;
       })
     : null;
 
@@ -137,7 +151,7 @@ export default function AgentStatus({ data, error, onFilterAlerts }: Props) {
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h3 className="text-sm font-semibold text-slate-200">Agent Status</h3>
           {counts && (
@@ -152,7 +166,33 @@ export default function AgentStatus({ data, error, onFilterAlerts }: Props) {
             </div>
           )}
         </div>
-        <span className="text-[10px] text-slate-600">Right-click an agent for actions</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="text"
+            placeholder="Search agents..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-surface-700 border border-surface-600 text-slate-200 text-xs rounded px-2.5 py-1.5 w-44 focus:outline-none focus:border-accent/50 placeholder:text-slate-500"
+          />
+          <div className="flex gap-1">
+            {(["all", "active", "disconnected"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-2.5 py-1.5 rounded text-xs font-medium transition-colors capitalize ${
+                  statusFilter === s
+                    ? s === "active" ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                      : s === "disconnected" ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                      : "bg-accent/20 text-accent border border-accent/30"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-surface-700"
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          <span className="text-[10px] text-slate-600">Right-click for actions</span>
+        </div>
       </div>
 
       {restartMsg && (
@@ -163,17 +203,17 @@ export default function AgentStatus({ data, error, onFilterAlerts }: Props) {
 
       {error ? (
         <div className="text-red-400 text-sm text-center py-4">{error}</div>
-      ) : !sorted ? (
+      ) : !filtered ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {Array.from({ length: 12 }).map((_, i) => (
             <div key={i} className="skeleton h-24 rounded-xl" />
           ))}
         </div>
-      ) : sorted.length === 0 ? (
-        <div className="text-slate-500 text-sm text-center py-8">No agents found</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-slate-500 text-sm text-center py-8">No agents match</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-          {sorted.map((agent) => (
+          {filtered.map((agent) => (
             <AgentCard key={agent.id} agent={agent} onContextMenu={handleContextMenu} />
           ))}
         </div>
