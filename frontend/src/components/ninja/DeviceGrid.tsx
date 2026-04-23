@@ -359,10 +359,12 @@ export default function DeviceGrid({ data, error, initialSearch, ninjaWebUrl, on
             <button
               key={f}
               onClick={() => setStatusFilter(f)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${
+              className={`px-2.5 py-1.5 rounded text-xs font-medium capitalize transition-colors ${
                 statusFilter === f
-                  ? "bg-accent/20 text-accent border border-accent/30"
-                  : "text-slate-400 hover:text-slate-200 border border-transparent"
+                  ? f === "online"  ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                  : f === "offline" ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                  : "bg-accent/20 text-accent border border-accent/30"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-surface-700"
               }`}
             >
               {f}
