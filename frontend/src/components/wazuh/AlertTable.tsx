@@ -626,9 +626,17 @@ export default function AlertTable({
 }: Props) {
   const [grouped, setGrouped] = useState(true);
   const [groupPage, setGroupPage] = useState(0);
+  const [groupSort, setGroupSort] = useState<"count" | "recent">("recent");
 
   const totalRawPages = data ? Math.ceil(data.total / pageSize) : 0;
-  const allGroups = groupedData?.groups ?? [];
+  const rawGroups = groupedData?.groups ?? [];
+  const allGroups = groupSort === "recent"
+    ? [...rawGroups].sort((a, b) => {
+        const ta = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+        const tb = b.last_seen ? new Date(b.last_seen).getTime() : 0;
+        return tb - ta;
+      })
+    : [...rawGroups].sort((a, b) => b.count - a.count);
   const totalGroupPages = Math.ceil(allGroups.length / GROUPED_PAGE_SIZE);
   const visibleGroups = allGroups.slice(groupPage * GROUPED_PAGE_SIZE, (groupPage + 1) * GROUPED_PAGE_SIZE);
 
@@ -674,6 +682,23 @@ export default function AlertTable({
               Raw
             </button>
           </div>
+          {/* Sort toggle (grouped only) */}
+          {grouped && (
+            <div className="flex rounded-lg overflow-hidden border border-surface-600 text-xs">
+              <button
+                onClick={() => { setGroupSort("recent"); setGroupPage(0); }}
+                className={`px-3 py-1.5 font-medium transition-colors ${groupSort === "recent" ? "bg-accent/20 text-accent" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                Most Recent
+              </button>
+              <button
+                onClick={() => { setGroupSort("count"); setGroupPage(0); }}
+                className={`px-3 py-1.5 font-medium transition-colors border-l border-surface-600 ${groupSort === "count" ? "bg-accent/20 text-accent" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                Most Frequent
+              </button>
+            </div>
+          )}
           <select
             value={severity}
             onChange={(e) => { onSeverityChange(e.target.value); setGroupPage(0); }}
