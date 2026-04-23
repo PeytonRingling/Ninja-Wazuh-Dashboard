@@ -706,6 +706,7 @@ export default function EndpointIntelTab() {
   const [wazuhAgents,  setWazuhAgents]  = useState<WazuhAgent[] | null>(null);
   const [agentSummary, setAgentSummary] = useState<AgentAlertSummary[] | null>(null);
   const [filter,       setFilter]       = useState<FilterMode>("all");
+  const [onlineFilter, setOnlineFilter] = useState<"all" | "online" | "offline">("all");
   const [search,       setSearch]       = useState("");
   const [hoursBack,    setHoursBack]    = useState(24);
   const [refreshing,   setRefreshing]   = useState(false);
@@ -815,6 +816,8 @@ export default function EndpointIntelTab() {
       case "critical":       list = list.filter(d => (d.alerts?.critical ?? 0) > 0); break;
       case "offline_alerts": list = list.filter(d => d.ninja && d.ninja.offline && (d.alerts?.total ?? 0) > 0); break;
     }
+    if (onlineFilter === "online")  list = list.filter(d => d.ninja && !d.ninja.offline);
+    if (onlineFilter === "offline") list = list.filter(d => d.ninja && d.ninja.offline);
     if (osFilter   !== "all") list = list.filter(d => getOsFamily(d)   === osFilter);
     if (typeFilter !== "all") list = list.filter(d => getDeviceType(d) === typeFilter);
     if (search.trim()) {
@@ -825,7 +828,7 @@ export default function EndpointIntelTab() {
       );
     }
     return [...list].sort((a, b) => riskScore(b) - riskScore(a));
-  }, [correlated, filter, osFilter, typeFilter, search]);
+  }, [correlated, filter, onlineFilter, osFilter, typeFilter, search]);
 
   // For grouped card view: split filtered into risk categories
   const groups = useMemo(() => {
@@ -1017,6 +1020,25 @@ export default function EndpointIntelTab() {
             />
           </div>
 
+          {/* Online / Offline filter */}
+          <div className="flex gap-1">
+            {(["all", "online", "offline"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => { setOnlineFilter(f); setSelectedDevice(null); }}
+                className={`px-2.5 py-1.5 rounded text-xs font-medium capitalize transition-colors ${
+                  onlineFilter === f
+                    ? f === "online"  ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                    : f === "offline" ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                    : "bg-accent/20 text-accent border border-accent/30"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-surface-700"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+
           {/* OS filter */}
           <div className="relative">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
@@ -1072,9 +1094,9 @@ export default function EndpointIntelTab() {
           )}
 
           {/* Clear all */}
-          {(search || osFilter !== "all" || typeFilter !== "all") && (
+          {(search || onlineFilter !== "all" || osFilter !== "all" || typeFilter !== "all") && (
             <button
-              onClick={() => { setSearch(""); setOsFilter("all"); setTypeFilter("all"); setSelectedDevice(null); }}
+              onClick={() => { setSearch(""); setOnlineFilter("all"); setOsFilter("all"); setTypeFilter("all"); setSelectedDevice(null); }}
               className="px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 border border-surface-600 hover:border-slate-500 transition-colors"
             >
               Clear all
