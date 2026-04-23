@@ -226,7 +226,7 @@ async def get_wazuh_alerts(
     severity: str = Query(None),
     agent: str = Query(None),
     rule_id: str = Query(None),
-    hours_back: int = Query(24, ge=1, le=168),
+    hours_back: float = Query(24, gt=0, le=168),
 ):
     try:
         return await wazuh.get_alerts(limit, offset, severity, agent, rule_id, hours_back)
@@ -239,7 +239,7 @@ async def get_wazuh_alerts_grouped(
     severity: str = Query(None),
     agent: str = Query(None),
     rule_id: str = Query(None),
-    hours_back: int = Query(24, ge=1, le=168),
+    hours_back: float = Query(24, gt=0, le=168),
 ):
     try:
         return await wazuh.get_grouped_alerts(severity, agent, rule_id, hours_back)
@@ -248,7 +248,7 @@ async def get_wazuh_alerts_grouped(
 
 
 @app.get("/api/wazuh/noisy-rules")
-async def get_noisy_rules(hours_back: int = Query(24, ge=1, le=168)):
+async def get_noisy_rules(hours_back: float = Query(24, gt=0, le=168)):
     try:
         return await wazuh.get_noisy_rules(hours_back)
     except Exception as e:
@@ -274,7 +274,7 @@ async def get_alert_volume(timeframe: str = Query("24h", pattern="^(24h|7d|30d)$
 @app.get("/api/wazuh/rule-breakdown")
 async def get_rule_breakdown(
     rule_id: str = Query(...),
-    hours_back: int = Query(24, ge=1, le=168),
+    hours_back: float = Query(24, gt=0, le=168),
 ):
     try:
         return await wazuh.get_rule_breakdown(rule_id, hours_back)
@@ -303,7 +303,7 @@ async def get_rule_dimension_detail(
     rule_id:    str = Query(...),
     field:      str = Query(...),
     value:      str = Query(...),
-    hours_back: int = Query(24, ge=1, le=168),
+    hours_back: float = Query(24, gt=0, le=168),
 ):
     try:
         return await wazuh.get_rule_dimension_detail(rule_id, field, value, hours_back)

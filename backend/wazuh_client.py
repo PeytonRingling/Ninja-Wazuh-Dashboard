@@ -142,7 +142,7 @@ class WazuhClient:
 
     # ── Noisy rules ───────────────────────────────────────────────────────────
 
-    async def get_noisy_rules(self, hours_back: int = 24) -> list:
+    async def get_noisy_rules(self, hours_back: float = 24) -> list:
         cache_key = f"wazuh_noisy_rules_{hours_back}"
         cached = cache.get(cache_key)
         if cached:
@@ -150,7 +150,7 @@ class WazuhClient:
 
         result = await self.indexer.search({
             "size": 0,
-            "query": {"range": {"timestamp": {"gte": f"now-{hours_back}h"}}},
+            "query": {"range": {"timestamp": {"gte": f"now-{int(hours_back * 60)}m"}}},
             "aggs": {
                 "top_rules": {
                     "terms": {
@@ -192,9 +192,9 @@ class WazuhClient:
         severity: str = None,
         agent: str = None,
         rule_id: str = None,
-        hours_back: int = 24,
+        hours_back: float = 24,
     ) -> dict:
-        must = [{"range": {"timestamp": {"gte": f"now-{hours_back}h"}}}]
+        must = [{"range": {"timestamp": {"gte": f"now-{int(hours_back * 60)}m"}}}]
 
         if severity and severity in LEVEL_RANGES:
             must.append({"range": {"rule.level": LEVEL_RANGES[severity]}})
@@ -227,7 +227,7 @@ class WazuhClient:
 
     # ── Per-agent alert summary (for Endpoint Intel tab) ─────────────────────
 
-    async def get_agent_alert_summary(self, hours_back: int = 24) -> list:
+    async def get_agent_alert_summary(self, hours_back: float = 24) -> list:
         cache_key = f"wazuh_agent_summary_{hours_back}"
         cached = cache.get(cache_key)
         if cached:
@@ -235,7 +235,7 @@ class WazuhClient:
 
         result = await self.indexer.search({
             "size": 0,
-            "query": {"range": {"timestamp": {"gte": f"now-{hours_back}h"}}},
+            "query": {"range": {"timestamp": {"gte": f"now-{int(hours_back * 60)}m"}}},
             "aggs": {
                 "by_agent": {
                     "terms": {"field": "agent.name", "size": 200},
@@ -283,7 +283,7 @@ class WazuhClient:
 
     # ── Rule breakdown (drill-down) ───────────────────────────────────────────
 
-    async def get_rule_breakdown(self, rule_id: str, hours_back: int = 24) -> dict:
+    async def get_rule_breakdown(self, rule_id: str, hours_back: float = 24) -> dict:
         cache_key = f"wazuh_rule_breakdown_{rule_id}_{hours_back}"
         cached = cache.get(cache_key)
         if cached:
@@ -294,7 +294,7 @@ class WazuhClient:
             "query": {
                 "bool": {
                     "must": [
-                        {"range": {"timestamp": {"gte": f"now-{hours_back}h"}}},
+                        {"range": {"timestamp": {"gte": f"now-{int(hours_back * 60)}m"}}},
                         {"term": {"rule.id": rule_id}},
                     ]
                 }
@@ -415,7 +415,7 @@ class WazuhClient:
     }
 
     async def get_rule_dimension_detail(
-        self, rule_id: str, field: str, value: str, hours_back: int = 24
+        self, rule_id: str, field: str, value: str, hours_back: float = 24
     ) -> dict:
         es_field = self._FIELD_MAP.get(field)
         if not es_field:
@@ -431,7 +431,7 @@ class WazuhClient:
             "query": {
                 "bool": {
                     "must": [
-                        {"range": {"timestamp": {"gte": f"now-{hours_back}h"}}},
+                        {"range": {"timestamp": {"gte": f"now-{int(hours_back * 60)}m"}}},
                         {"term": {"rule.id": rule_id}},
                         {"term": {es_field: value}},
                     ]
@@ -710,14 +710,14 @@ class WazuhClient:
         severity: str = None,
         agent: str = None,
         rule_id: str = None,
-        hours_back: int = 24,
+        hours_back: float = 24,
     ) -> dict:
         cache_key = f"wazuh_grouped_{severity}_{agent}_{rule_id}_{hours_back}"
         cached = cache.get(cache_key)
         if cached:
             return cached
 
-        must = [{"range": {"timestamp": {"gte": f"now-{hours_back}h"}}}]
+        must = [{"range": {"timestamp": {"gte": f"now-{int(hours_back * 60)}m"}}}]
         if severity and severity in LEVEL_RANGES:
             must.append({"range": {"rule.level": LEVEL_RANGES[severity]}})
         if agent:

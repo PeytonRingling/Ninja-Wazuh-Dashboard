@@ -23,7 +23,16 @@ interface Props {
 
 type SubTab = "overview" | "alerts" | "rules" | "agents" | "change_log";
 
-const HOUR_OPTIONS = [1, 3, 6, 12, 24] as const;
+const TIME_OPTIONS: { label: string; value: number }[] = [
+  { label: "1m",  value: 1 / 60 },
+  { label: "5m",  value: 5 / 60 },
+  { label: "15m", value: 15 / 60 },
+  { label: "1h",  value: 1 },
+  { label: "3h",  value: 3 },
+  { label: "6h",  value: 6 },
+  { label: "12h", value: 12 },
+  { label: "24h", value: 24 },
+];
 
 const SEV_BADGE: Record<string, string> = {
   critical: "badge-critical",
@@ -194,21 +203,15 @@ export default function WazuhTab({ hasError, errorMsg, wazuhSummary, severityFil
           {/* Window + Refresh */}
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500">Window:</span>
-            <div className="flex gap-1">
-              {HOUR_OPTIONS.map((h) => (
-                <button
-                  key={h}
-                  onClick={() => { setHoursBack(h); setAlertPage(0); onSeverityChange(""); }}
-                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                    hoursBack === h
-                      ? "bg-accent/20 text-accent border border-accent/30"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  {h}h
-                </button>
+            <select
+              value={hoursBack}
+              onChange={(e) => { setHoursBack(Number(e.target.value)); setAlertPage(0); onSeverityChange(""); }}
+              className="bg-surface-700 border border-surface-600 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-accent/50"
+            >
+              {TIME_OPTIONS.map(({ label, value }) => (
+                <option key={label} value={value}>{label}</option>
               ))}
-            </div>
+            </select>
             <RefreshButton onClick={handleRefresh} loading={refreshing} />
           </div>
         </div>
