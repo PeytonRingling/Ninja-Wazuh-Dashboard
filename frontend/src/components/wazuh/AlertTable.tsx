@@ -319,6 +319,135 @@ function ScaEventDetail({ alert }: { alert: WazuhAlert }) {
   );
 }
 
+// ── Syscheck (FIM) detail ─────────────────────────────────────────────────────
+
+function SyscheckDetail({ alert }: { alert: WazuhAlert }) {
+  const sc = alert.data?.syscheck;
+  if (!sc) return null;
+
+  const eventColors: Record<string, string> = {
+    added:    "text-green-400 bg-green-500/10 border-green-500/20",
+    modified: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
+    deleted:  "text-red-400 bg-red-500/10 border-red-500/20",
+  };
+  const event = sc.event?.toLowerCase() ?? "";
+  const eventStyle = eventColors[event] ?? "text-slate-300 bg-surface-600 border-surface-500";
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-semibold text-slate-300">File Integrity Event</span>
+        {sc.event && (
+          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border capitalize ${eventStyle}`}>
+            {sc.event}
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-1 gap-2">
+        {sc.path && (
+          <div className="flex items-baseline gap-3">
+            <span className="text-slate-500 text-xs w-28 shrink-0">File Path</span>
+            <span className="text-xs font-mono break-all">
+              <span className="text-slate-500">{cleanPath(sc.path).substring(0, cleanPath(sc.path).lastIndexOf("\\") + 1)}</span>
+              <span className="text-slate-100 font-semibold">{cleanPath(sc.path).split("\\").pop()}</span>
+            </span>
+          </div>
+        )}
+        {sc.value_name && (
+          <div className="flex items-baseline gap-3">
+            <span className="text-slate-500 text-xs w-28 shrink-0">Registry Key</span>
+            <span className="text-xs font-mono text-slate-200">{sc.value_name}</span>
+          </div>
+        )}
+        {(sc.uname_after ?? sc.uname) && (
+          <div className="flex items-baseline gap-3">
+            <span className="text-slate-500 text-xs w-28 shrink-0">Modified By</span>
+            <span className="text-xs font-mono text-slate-200">{sc.uname_after ?? sc.uname}</span>
+          </div>
+        )}
+        {(sc.sha1_before || sc.sha1_after) && (
+          <div className="mt-1 space-y-1">
+            {sc.sha1_before && (
+              <div className="flex items-baseline gap-3">
+                <span className="text-slate-500 text-xs w-28 shrink-0">SHA1 Before</span>
+                <span className="text-xs font-mono text-slate-500 line-through">{sc.sha1_before}</span>
+              </div>
+            )}
+            {sc.sha1_after && (
+              <div className="flex items-baseline gap-3">
+                <span className="text-slate-500 text-xs w-28 shrink-0">SHA1 After</span>
+                <span className="text-xs font-mono text-amber-300">{sc.sha1_after}</span>
+              </div>
+            )}
+          </div>
+        )}
+        {sc.content_changes && (
+          <div>
+            <span className="text-slate-500 text-xs block mb-1">Content Changes</span>
+            <pre className="text-xs text-slate-400 font-mono bg-surface-900/80 rounded-lg px-3 py-2 border border-surface-600 overflow-x-auto whitespace-pre-wrap">{sc.content_changes}</pre>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Rule fields reference panel ───────────────────────────────────────────────
+
+function RuleFieldsPanel({ alert }: { alert: WazuhAlert }) {
+  const sc  = alert.data?.syscheck;
+  const evd = alert.data?.win?.eventdata;
+
+  const rows: { path: string; value: string }[] = [];
+  const add = (path: string, value: string | undefined | null) => {
+    if (value) rows.push({ path, value });
+  };
+
+  // Syscheck FIM
+  add("syscheck.path",       sc?.path);
+  add("syscheck.value_name", sc?.value_name);
+  add("syscheck.uname",      sc?.uname_after ?? sc?.uname);
+  add("syscheck.event",      sc?.event);
+
+  // Windows Sysmon
+  add("win.eventdata.image",             evd?.image);
+  add("win.eventdata.parentImage",       evd?.parentImage);
+  add("win.eventdata.commandLine",       evd?.commandLine);
+  add("win.eventdata.parentCommandLine", evd?.parentCommandLine);
+  add("win.eventdata.targetFilename",    evd?.targetFilename);
+  add("win.eventdata.destinationIp",     evd?.destinationIp);
+
+  // Windows Security & Auditing
+  add("win.eventdata.logonType",      evd?.logonType);
+  add("win.eventdata.targetUserName", evd?.targetUserName);
+  add("win.eventdata.subjectUserName",evd?.subjectUserName);
+  add("win.eventdata.ipAddress",      evd?.ipAddress);
+  add("win.eventdata.processName",    evd?.processName);
+
+  // Universal
+  add("agent.name",  alert.agent?.name);
+  add("rule.id",     alert.rule?.id);
+  add("rule.groups", alert.rule?.groups?.join(", "));
+
+  if (!rows.length) return null;
+
+  return (
+    <div>
+      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Rule Fields</h4>
+      <div className="bg-surface-800 rounded-xl border border-surface-600 px-4 py-3">
+        <div className="grid grid-cols-1 gap-1.5">
+          {rows.map(({ path, value }) => (
+            <div key={path} className="flex items-baseline gap-3 min-w-0">
+              <span className="text-xs font-mono text-slate-500 w-56 shrink-0">{path}</span>
+              <span className="text-xs font-mono text-slate-200 break-all">{cleanPath(value)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Compliance badges ─────────────────────────────────────────────────────────
 
 function ComplianceRow({ rule }: { rule: WazuhAlert["rule"] }) {
@@ -350,13 +479,14 @@ function ComplianceRow({ rule }: { rule: WazuhAlert["rule"] }) {
 function AlertRow({ alert }: { alert: WazuhAlert }) {
   const [expanded, setExpanded] = useState(false);
 
-  const rule   = alert.rule ?? {};
-  const level  = rule.level ?? 0;
-  const sev    = levelToSeverity(level);
-  const mitre  = rule.mitre;
-  const hasWin = !!alert.data?.win;
-  const hasSca = !!alert.data?.sca;
-  const hasMitre = !!(mitre?.technique?.length || mitre?.tactic?.length);
+  const rule        = alert.rule ?? {};
+  const level       = rule.level ?? 0;
+  const sev         = levelToSeverity(level);
+  const mitre       = rule.mitre;
+  const hasWin      = !!alert.data?.win;
+  const hasSca      = !!alert.data?.sca;
+  const hasSyscheck = !!alert.data?.syscheck;
+  const hasMitre    = !!(mitre?.technique?.length || mitre?.tactic?.length);
 
   return (
     <>
@@ -412,13 +542,14 @@ function AlertRow({ alert }: { alert: WazuhAlert }) {
               </div>
 
               {/* ── What happened ── */}
-              {(hasWin || hasSca) && (
+              {(hasWin || hasSca || hasSyscheck) && (
                 <div>
                   <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                    {hasWin ? "What Happened" : hasSca ? `SCA — ${alert.data?.sca?.policy ?? "Security Assessment"}` : ""}
+                    {hasWin ? "What Happened" : hasSyscheck ? "File Integrity Monitoring" : hasSca ? `SCA — ${alert.data?.sca?.policy ?? "Security Assessment"}` : ""}
                   </h4>
                   <div className="bg-surface-800 rounded-xl border border-surface-600 px-4 py-3">
                     {hasWin && <WinEventDetail alert={alert} />}
+                    {hasSyscheck && <SyscheckDetail alert={alert} />}
                     {hasSca && <ScaEventDetail alert={alert} />}
                   </div>
                 </div>
@@ -441,6 +572,9 @@ function AlertRow({ alert }: { alert: WazuhAlert }) {
                   </div>
                 </div>
               )}
+
+              {/* ── Rule fields reference ── */}
+              <RuleFieldsPanel alert={alert} />
 
               {/* ── Agent + compliance in one footer row ── */}
               <div className="pt-2 border-t border-surface-700 space-y-2">
@@ -479,14 +613,15 @@ function AlertRow({ alert }: { alert: WazuhAlert }) {
 
 function GroupedAlertRow({ group }: { group: GroupedAlert }) {
   const [expanded, setExpanded] = useState(false);
-  const alert = group.alert;
-  const rule  = alert.rule ?? {};
-  const level = rule.level ?? 0;
-  const sev   = levelToSeverity(level);
-  const mitre = rule.mitre;
-  const hasWin = !!alert.data?.win;
-  const hasSca = !!alert.data?.sca;
-  const hasMitre = !!(mitre?.technique?.length || mitre?.tactic?.length);
+  const alert       = group.alert;
+  const rule        = alert.rule ?? {};
+  const level       = rule.level ?? 0;
+  const sev         = levelToSeverity(level);
+  const mitre       = rule.mitre;
+  const hasWin      = !!alert.data?.win;
+  const hasSca      = !!alert.data?.sca;
+  const hasSyscheck = !!alert.data?.syscheck;
+  const hasMitre    = !!(mitre?.technique?.length || mitre?.tactic?.length);
 
   return (
     <>
@@ -553,13 +688,14 @@ function GroupedAlertRow({ group }: { group: GroupedAlert }) {
               </div>
 
               {/* ── Most recent occurrence detail ── */}
-              {(hasWin || hasSca) && (
+              {(hasWin || hasSca || hasSyscheck) && (
                 <div>
                   <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                    Most Recent Occurrence — {hasWin ? "What Happened" : hasSca ? `SCA — ${alert.data?.sca?.policy ?? "Security Assessment"}` : ""}
+                    Most Recent Occurrence — {hasWin ? "What Happened" : hasSyscheck ? "File Integrity Monitoring" : hasSca ? `SCA — ${alert.data?.sca?.policy ?? "Security Assessment"}` : ""}
                   </h4>
                   <div className="bg-surface-800 rounded-xl border border-surface-600 px-4 py-3">
                     {hasWin && <WinEventDetail alert={alert} />}
+                    {hasSyscheck && <SyscheckDetail alert={alert} />}
                     {hasSca && <ScaEventDetail alert={alert} />}
                   </div>
                 </div>
@@ -582,6 +718,9 @@ function GroupedAlertRow({ group }: { group: GroupedAlert }) {
                   </div>
                 </div>
               )}
+
+              {/* ── Rule fields reference ── */}
+              <RuleFieldsPanel alert={alert} />
 
               {/* ── Agent + compliance ── */}
               <div className="pt-2 border-t border-surface-700 space-y-2">

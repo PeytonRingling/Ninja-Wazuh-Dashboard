@@ -249,6 +249,22 @@ export interface WazuhAlert {
         compliance?: Record<string, unknown>;
       };
     };
+    syscheck?: {
+      path?: string;
+      value_name?: string;
+      uname_after?: string;
+      uname?: string;
+      event?: string;
+      changed_attributes?: string[] | string;
+      sha1_before?: string;
+      sha1_after?: string;
+      md5_before?: string;
+      md5_after?: string;
+      size_before?: string;
+      size_after?: string;
+      perm_after?: string;
+      content_changes?: string;
+    };
     [key: string]: unknown;
   };
   count?: number;
