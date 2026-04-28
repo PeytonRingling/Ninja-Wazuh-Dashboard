@@ -213,6 +213,7 @@ class WazuhClient:
                 "agent.*", "manager.*", "decoder.*", "input.*", "location",
                 "rule.*",
                 "data.*",
+                "syscheck.*",
             ],
         })
 
@@ -751,6 +752,7 @@ class WazuhClient:
                                             "agent.*", "manager.*", "decoder.*",
                                             "input.*", "location",
                                             "rule.*", "data.*",
+                                            "syscheck.*",
                                         ],
                                     }
                                 },

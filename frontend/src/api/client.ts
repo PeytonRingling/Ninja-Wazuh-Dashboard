@@ -214,6 +214,22 @@ export interface WazuhAlert {
     cis_csc_v7?: string[];
     hipaa?: string[];
   };
+  syscheck?: {
+    path?: string;
+    value_name?: string;
+    uname_after?: string;
+    uname?: string;
+    event?: string;
+    changed_attributes?: string[] | string;
+    sha1_before?: string;
+    sha1_after?: string;
+    md5_before?: string;
+    md5_after?: string;
+    size_before?: string;
+    size_after?: string;
+    perm_after?: string;
+    content_changes?: string;
+  };
   data?: {
     win?: {
       eventdata?: Record<string, string>;
@@ -248,22 +264,6 @@ export interface WazuhAlert {
         command?: string[];
         compliance?: Record<string, unknown>;
       };
-    };
-    syscheck?: {
-      path?: string;
-      value_name?: string;
-      uname_after?: string;
-      uname?: string;
-      event?: string;
-      changed_attributes?: string[] | string;
-      sha1_before?: string;
-      sha1_after?: string;
-      md5_before?: string;
-      md5_after?: string;
-      size_before?: string;
-      size_after?: string;
-      perm_after?: string;
-      content_changes?: string;
     };
     [key: string]: unknown;
   };

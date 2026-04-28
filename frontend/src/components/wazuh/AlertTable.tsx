@@ -322,7 +322,7 @@ function ScaEventDetail({ alert }: { alert: WazuhAlert }) {
 // ── Syscheck (FIM) detail ─────────────────────────────────────────────────────
 
 function SyscheckDetail({ alert }: { alert: WazuhAlert }) {
-  const sc = alert.data?.syscheck;
+  const sc = alert.syscheck;
   if (!sc) return null;
 
   const eventColors: Record<string, string> = {
@@ -395,7 +395,7 @@ function SyscheckDetail({ alert }: { alert: WazuhAlert }) {
 // ── Rule fields reference panel ───────────────────────────────────────────────
 
 function RuleFieldsPanel({ alert }: { alert: WazuhAlert }) {
-  const sc  = alert.data?.syscheck;
+  const sc  = alert.syscheck;
   const evd = alert.data?.win?.eventdata;
 
   const rows: { path: string; value: string }[] = [];
@@ -485,7 +485,7 @@ function AlertRow({ alert }: { alert: WazuhAlert }) {
   const mitre       = rule.mitre;
   const hasWin      = !!alert.data?.win;
   const hasSca      = !!alert.data?.sca;
-  const hasSyscheck = !!alert.data?.syscheck;
+  const hasSyscheck = !!alert.syscheck;
   const hasMitre    = !!(mitre?.technique?.length || mitre?.tactic?.length);
 
   return (
@@ -620,7 +620,7 @@ function GroupedAlertRow({ group }: { group: GroupedAlert }) {
   const mitre       = rule.mitre;
   const hasWin      = !!alert.data?.win;
   const hasSca      = !!alert.data?.sca;
-  const hasSyscheck = !!alert.data?.syscheck;
+  const hasSyscheck = !!alert.syscheck;
   const hasMitre    = !!(mitre?.technique?.length || mitre?.tactic?.length);
 
   return (
