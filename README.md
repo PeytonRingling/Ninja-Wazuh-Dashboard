@@ -1,11 +1,17 @@
 # IT Operations Dashboard
 
-A locally-run web dashboard providing a unified, real-time view of Wazuh SIEM and NinjaOne RMM environments. Correlates endpoint data across both platforms for a single pane of glass into your fleet's security and management status.
+A locally-run web dashboard providing a unified, real-time view of Wazuh SIEM and NinjaOne RMM environments. Correlates endpoint data across both platforms for a single pane of glass into your fleet's security posture and device management status — eliminating the need to context-switch between two separate consoles.
 
-## Stack
+## Tech Stack
 
-- **Backend:** Python + FastAPI + uvicorn
-- **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS + Recharts
+| Layer | Technology |
+|---|---|
+| Backend | Python + FastAPI + uvicorn |
+| Frontend | React 18 + TypeScript + Vite + Tailwind CSS + Recharts |
+| Integrations | Wazuh SIEM REST API, NinjaOne RMM REST API |
+| Storage | SQLite (local suppression log) |
+
+---
 
 ## Setup
 
@@ -17,7 +23,7 @@ A locally-run web dashboard providing a unified, real-time view of Wazuh SIEM an
 ### 1. Clone the repository
 
 ```bash
-git clone git@github.com:Suntado/Ninja-Wazuh-Dashboard.git
+git clone https://github.com/PeytonRingling/Ninja-Wazuh-Dashboard.git
 cd Ninja-Wazuh-Dashboard
 ```
 
